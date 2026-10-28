@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { AlignLeft, ArrowLeft, ArrowRight, ArrowUp, ArrowDown, BrainCircuit, Braces, Check, ChevronDown, ChevronUp, ChevronRight, ClipboardCheck, Copy, FileJson, GitBranch, Layers3, ListChecks, LogIn, LogOut, PanelRight, Pin, PinOff, Play, Plus, Redo2, RefreshCw, Regex, Rocket, Save, Search, Server, Settings2, ShieldCheck, Split, Trash2, Undo2, X } from 'lucide-react';
@@ -84,7 +86,7 @@ export type WorkflowEditorProps = {
 };
 const icons: Record<RuleKind, LucideIcon> = { keyword: Braces, regex: Regex, length: AlignLeft, llm: BrainCircuit, pii: ShieldCheck, json: FileJson, required: ListChecks };
 const stageName = { pre: '요청 검사', post: '응답 검사' };
-const id = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 8)}`;
+const id = (prefix: string) => `${prefix}-${randomUuid().slice(0, 8)}`;
 function selectedBranchPreview(workflow:Workflow,keys:string[],kind:'parallel'|'condition'):ReturnType<typeof previewBranchSelection> {
   const definitions=nodeDefinitions(workflow),visible=new Set(definitions.map(node=>node.key));
   const selected=[...new Set(keys.map(key=>visibleLayoutKey(workflow,key)).filter((key):key is string=>Boolean(key&&visible.has(key))))];

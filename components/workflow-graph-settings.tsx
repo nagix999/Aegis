@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useEffect, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { ArrowRight, GitBranch, GitMerge, Plus, Split, Trash2 } from 'lucide-react';
 import type { FlowCondition, FlowControlNode, FlowEdge, Workflow } from '@/lib/aegis-types';
@@ -25,7 +27,7 @@ export type WorkflowGraphSettingsProps = {
   nodeActionsRef?: Ref<{deleteNode:()=>void}>;
   notify: (message: string) => void;
 };
-const key = (prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 12)}`;
+const key = (prefix: string) => `${prefix}-${randomUuid().slice(0, 12)}`;
 const names = { condition: '조건 분기', fork: '병렬 분기', join: '결과 합류' };
 const conditionOptions = [['contains', '문구 포함'], ['not_contains', '문구 미포함'], ['length_gte', '글자 수 이상'], ['length_lte', '글자 수 이하']] as const;
 const portLabel = (port?: string) => port === 'true' ? '조건 충족' : port === 'false' ? '그 외' : '다음';

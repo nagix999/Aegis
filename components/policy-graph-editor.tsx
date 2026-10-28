@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useEffect, useId, useImperativeHandle, useRef, useState, type Ref } from 'react';
 import { ArrowRight, GitBranch, Plus, Trash2, Zap } from 'lucide-react';
 import type { PolicyGraph, PolicyGraphNode, PolicyPredicate, PolicyRoute } from '@/lib/aegis-types';
@@ -71,7 +73,7 @@ export function PolicyGraphEditor({graph,schema,disabled,onChange,selectedNodeId
       const pending=[to],visited=new Set<string>();
       while(pending.length){const key=pending.pop()!;if(key===node.id){setConnectionError('정책 노드에 순환 연결을 만들 수 없습니다.');return;}if(visited.has(key))continue;visited.add(key);for(const edge of graph.edges)if(edge.from===key&&!(edge.from===node.id&&edge.port===port))pending.push(edge.to);}
     }
-    onChange({...graph,edges:[...graph.edges.filter(e=>!(e.from===node.id&&e.port===port)),...(to?[{id:previous?.id??`policy-edge-${crypto.randomUUID()}`,from:node.id,to,port}]:[])]});
+    onChange({...graph,edges:[...graph.edges.filter(e=>!(e.from===node.id&&e.port===port)),...(to?[{id:previous?.id??`policy-edge-${randomUuid()}`,from:node.id,to,port}]:[])]});
   }
   function deleteNode() {
     if(disabled||!node)return;

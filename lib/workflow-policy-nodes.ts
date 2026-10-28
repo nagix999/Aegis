@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
 import type { PolicyGraphNode, PolicyRevision, Workflow } from './aegis-types';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { bindPolicyRevision } from './policy-routing.ts';
@@ -39,7 +41,7 @@ export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:st
   const previous = graph.edges.find(edge=>edge.from===from&&edge.port===port);
   if(!previous&&edgeId!==undefined&&(!validId(edgeId)||graph.edges.some(edge=>edge.id===edgeId)))throw new Error('새 정책 연결선의 ID를 확인하세요.');
   graph.edges=graph.edges.filter(edge=>!(edge.from===from&&edge.port===port));
-  graph.edges.push({id:previous?.id??edgeId??`policy-edge-${crypto.randomUUID()}`,from,to,port});
+  graph.edges.push({id:previous?.id??edgeId??`policy-edge-${randomUuid()}`,from,to,port});
   if (graph.edges.length>48) throw new Error('정책 연결선은 최대 48개입니다.');
   const active=new Set<string>(), done=new Set<string>();
   const visit=(key:string) => {
@@ -53,7 +55,7 @@ export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:st
   return next;
 }
 
-export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule'|'action',identifier=`policy-${crypto.randomUUID()}`):{workflow:Workflow;nodeId:string} {
+export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule'|'action',identifier=`policy-${randomUuid()}`):{workflow:Workflow;nodeId:string} {
   const next=structuredClone(workflow),graph=next.policyRouting?.graph;
   if(!graph||next.policyRouting?.policy.formatVersion!==2)throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
   if(graph.nodes.length>=24)throw new Error('정책 노드는 최대 24개입니다.');
@@ -66,7 +68,7 @@ export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule
 }
 
 /** An explicit port creation is one edit: a failed connection cannot leave an orphan. */
-export function addConnectedWorkflowPolicyNode(workflow:Workflow,from:string,port:'true'|'false',kind:'branch'|'action',identifier=`policy-${crypto.randomUUID()}`):{workflow:Workflow;nodeId:string} {
+export function addConnectedWorkflowPolicyNode(workflow:Workflow,from:string,port:'true'|'false',kind:'branch'|'action',identifier=`policy-${randomUuid()}`):{workflow:Workflow;nodeId:string} {
   const added=addWorkflowPolicyGraphNode(workflow,kind,identifier);
   return {workflow:connectWorkflowPolicyNode(added.workflow,from,added.nodeId,port),nodeId:added.nodeId};
 }

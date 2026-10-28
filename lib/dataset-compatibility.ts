@@ -1,4 +1,6 @@
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { sha256Hex } from './sha256.ts';
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { fieldAssertionErrors } from './output-expectations.ts';
 import type { AppState, Connection, Dataset, DatasetRow, Rule, RuleKind, Workflow } from './aegis-types';
 // @ts-expect-error Node's source test runner uses explicit TypeScript imports.
@@ -58,8 +60,7 @@ export async function evaluationPreflight(dataset: Dataset, sides: PreflightSide
   const ordered = [...sides].sort((a, b) => (a.key === 'candidate' ? 0 : 1) - (b.key === 'candidate' ? 0 : 1));
   const [dataFingerprint, ...workflowFingerprints] = await Promise.all([datasetFingerprint(dataset), ...ordered.map(side => configurationFingerprint(side.workflow, side.connections))]);
   const sideFingerprints = ordered.map((side, index) => ({ key: side.key, workflowFingerprint: workflowFingerprints[index] }));
-  const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify({ version: 1, datasetFingerprint: dataFingerprint, sides: sideFingerprints })));
-  const fingerprint = Array.from(new Uint8Array(bytes), value => value.toString(16).padStart(2, '0')).join('');
+  const fingerprint = await sha256Hex(JSON.stringify({ version: 1, datasetFingerprint: dataFingerprint, sides: sideFingerprints }));
   const issues = ordered.flatMap(side => inspectDatasetCompatibility(dataset, side.workflow).issues.map(issue => ({ ...issue, sideKey: side.key, sideLabel: side.label })));
   return { fingerprint, issues, requiresAcknowledgement: issues.length > 0, sideFingerprints, datasetFingerprint: dataFingerprint };
 }

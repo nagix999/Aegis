@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { ArrowLeft, ArrowRight, ChevronLeft, ChevronRight, Copy, Database, Download, Loader2, Plus, Save, Search, Trash2, Upload, X } from 'lucide-react';
 import type { Dataset, DatasetRow } from '@/lib/aegis-types';
@@ -19,7 +21,7 @@ export type DatasetsPageProps = PageProps & {
   reproduction?: {requestId:string;workflowName:string;version:string};
 };
 type EditorRequest = {datasetId?:string;rowId?:string;workflowId?:string;target?:'draft'|'deployed';reproduction?:DatasetsPageProps['reproduction']};
-const newId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
+const newId = (prefix: string) => `${prefix}-${randomUuid()}`;
 const row = (): DatasetRow => ({ id: newId('row'), input: '', expected: 'allow' });
 const signature = (dataset: Dataset) => JSON.stringify({ name: dataset.name, description: dataset.description, rows: dataset.rows });
 type RequestDraft = {messages:string;options:string};

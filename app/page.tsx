@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { ShieldCheck, Workflow as WorkflowIcon, Server, Network, FlaskConical, Database, Radio, ScrollText, ChevronDown, ChevronRight, Plus, ArrowUpRight, X, Save, CircleHelp, ArrowRight, ArrowLeft, Loader2, Settings2, CheckCircle2, AlertCircle, RotateCcw, LayoutDashboard } from 'lucide-react';
@@ -53,7 +55,7 @@ const navItems:{id:string;label:string;icon:LucideIcon;section?:string}[] = [
   {id:'evaluation',label:'검증 실행',icon:FlaskConical},
   {id:'gateway',label:'API 배포',icon:Radio},
 ];
-const uid = (p:string)=>`${p}-${crypto.randomUUID().slice(0,8)}`;
+const uid = (p:string)=>`${p}-${randomUuid().slice(0,8)}`;
 type WorkingDraft = { draft:Workflow; base:Workflow; dirty:boolean };
 function recoveryStorage(): RecoveryStorage | undefined {
   try { return typeof window === 'undefined' ? undefined : window.localStorage; } catch { return undefined; }
@@ -194,7 +196,7 @@ export default function AegisConsole(){
   const createWorkflow=async()=>{if(!newName.trim())return;holdCurrentDraft();const w:Workflow={id:uid('wf'),name:newName.trim(),description:'',alias:uid('assistant'),mainConnectionId:state.connections.find(c=>c.role!=='guard')?.id||'',pre:[],post:[],updatedAt:new Date().toISOString()};const d=await act({action:'save_workflow',workflow:w,expectedUpdatedAt:null});if(d){showWorkingDraft({draft:structuredClone(d.state.workflows.find(item=>item.id===w.id)!),base:structuredClone(d.state.workflows.find(item=>item.id===w.id)!),dirty:false});setEvaluationOrigin(undefined);setModal(null);setNewName('');notify('새 워크플로우를 만들었습니다.')}};
   const duplicateWorkflow=async(id:string)=>{
     const original=state.workflows.find(w=>w.id===id);if(!original)return;
-    const clone=cloneWorkflowContent(original,uid);clone.id=uid('wf');if(state.role!=='admin')delete clone.releasePolicy;clone.name=`${original.name.slice(0,90)} 복사`;clone.alias=`${original.alias.slice(0,60)}-copy-${crypto.randomUUID().slice(0,6)}`;clone.updatedAt=new Date().toISOString();if(state.role!=='admin')delete clone.releasePolicy;
+    const clone=cloneWorkflowContent(original,uid);clone.id=uid('wf');if(state.role!=='admin')delete clone.releasePolicy;clone.name=`${original.name.slice(0,90)} 복사`;clone.alias=`${original.alias.slice(0,60)}-copy-${randomUuid().slice(0,6)}`;clone.updatedAt=new Date().toISOString();if(state.role!=='admin')delete clone.releasePolicy;
     const d=await act({action:'save_workflow',workflow:clone,expectedUpdatedAt:null});if(d)notify('워크플로우를 복제했습니다. 복제본은 초안으로 저장했습니다.');
   };
   const deleteWorkflow=async(id:string)=>{const d=await act({action:'delete_workflow',id});if(d){drafts.current.delete(id);editorSessions.current.delete(id);const record=recoveries.find(item=>item.workflowId===id);if(record)discardRecovery(record);if(activeDraftId.current===id){const next=d.state.workflows[0]||initialState().workflows[0];activeDraftId.current=next.id;setDraft(next);setDirty(false);}notify('초안 워크플로우를 삭제했습니다.')}};
@@ -234,7 +236,7 @@ export default function AegisConsole(){
   const closeDeploymentReview=()=>{setReviewWorkflowId('');setRollbackDeployment(undefined);setReviewSuspended(false);setReviewResumeError('');};
   const viewEvaluationRecord=async(runId:string)=>{interruptNavigation();const ticket=navigationIntent.current;try{const response=await fetch(`/api/console?view=evaluations&runId=${encodeURIComponent(runId)}`,{cache:'no-store',signal:AbortSignal.timeout(12000)});const data=await response.json() as {run?:import('@/lib/aegis-types').EvalRun;error?:{message:string}};if(!response.ok||!data.run)throw new Error(data.error?.message||'검증 기록이 없거나 보관 기간이 지났습니다.');if(ticket!==navigationIntent.current)return;const run=data.run;setEvaluationOrigin(undefined);openEvaluation(evaluationContextForRun(run));}catch(error){if(ticket===navigationIntent.current)notify(error instanceof Error?error.message:'검증 기록을 불러오지 못했습니다.');}};
   const viewLog=async(log:RequestLog)=>{interruptNavigation();const ticket=navigationIntent.current;const query=new URLSearchParams({view:'deployment',...(log.deploymentId?{deploymentId:log.deploymentId}:{workflowId:log.workflowId??'',version:log.version.replace(/^v/,'')})});try{const response=await fetch(`/api/console?${query}`,{cache:'no-store'});const data=await response.json() as ConsoleReply&{error?:{message:string}};if(!response.ok||!data.deployment)throw new Error(data.error?.message||'요청 당시 배포 설정을 찾지 못했습니다.');if(ticket!==navigationIntent.current)return;setLogSelection(undefined);setLogInspection({log,workflow:data.deployment.workflow,connections:data.deployment.connections});}catch(error){if(ticket===navigationIntent.current)notify(error instanceof Error?error.message:'배포 설정을 불러오지 못했습니다.');}};
-  const copyConflictingDraft=async()=>{const clone=cloneWorkflowContent(draft,uid);clone.id=uid('wf');if(state.role!=='admin')delete clone.releasePolicy;clone.name=`${draft.name.slice(0,90)} 복사`;clone.alias=`${draft.alias.slice(0,60)}-copy-${crypto.randomUUID().slice(0,6)}`;const reply=await act({action:'save_workflow',workflow:clone,expectedUpdatedAt:null});if(reply){const server=reply.state.workflows.find(item=>item.id===clone.id)!;setSaveConflict('');showWorkingDraft({draft:structuredClone(server),base:structuredClone(server),dirty:false});notify('내 변경 내용을 복사본에 저장했습니다. 원본의 서버 변경은 유지됩니다.');}};
+  const copyConflictingDraft=async()=>{const clone=cloneWorkflowContent(draft,uid);clone.id=uid('wf');if(state.role!=='admin')delete clone.releasePolicy;clone.name=`${draft.name.slice(0,90)} 복사`;clone.alias=`${draft.alias.slice(0,60)}-copy-${randomUuid().slice(0,6)}`;const reply=await act({action:'save_workflow',workflow:clone,expectedUpdatedAt:null});if(reply){const server=reply.state.workflows.find(item=>item.id===clone.id)!;setSaveConflict('');showWorkingDraft({draft:structuredClone(server),base:structuredClone(server),dirty:false});notify('내 변경 내용을 복사본에 저장했습니다. 원본의 서버 변경은 유지됩니다.');}};
   const returnToEvaluation=()=>{if(!evaluationOrigin)return;setSelectedRuleId('');openEvaluation(evaluationOrigin.context,true);};
   const evaluateCurrentWorkflow=async()=>{if(!evaluationOrigin)return;if(dirty&&!await save())return;setSelectedRuleId('');openEvaluation({...evaluationOrigin.context,workflowId:draft.id,tab:'batch',target:'draft',runId:'',rowId:'',localRun:undefined,resultFilter:'all',categoryFilter:'all',changedOnly:false,showSnapshot:false,scrollTop:0});};
   const openAccess=(connectionId:string)=>{setAccessConnectionId(connectionId);setNav('access');};

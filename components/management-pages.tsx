@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Activity, ArrowRight, Check, CheckCircle2, Clock3, Code2, Copy, FileClock, Globe2, KeyRound, Layers3, Loader2, LockKeyhole, Network, Pencil, Plus, Radio, Rocket, RotateCcw, Server, Settings2, Shield, ShieldAlert, ShieldCheck, Trash2, X, Zap } from 'lucide-react';
 import type { Connection, Deployment, GatewayKey, KeyPolicy, RetentionPolicy } from '@/lib/aegis-types';
@@ -16,7 +18,7 @@ export { DeploymentReview } from './deployment-review';
 const roleLabel = { main: '응답 모델', guard: '검사 모델', both: '응답과 검사' };
 const consoleRoleLabel = { admin: '관리자', editor: '편집자', viewer: '조회자' };
 const auditActionLabel: Record<string,string> = {save_workflow:'워크플로우 저장',delete_workflow:'워크플로우 삭제',save_dataset:'데이터셋 저장',delete_dataset:'데이터셋 삭제',save_connection:'모델 서버 저장',delete_connection:'모델 서버 삭제',diagnose_connection:'모델 서버 진단',collect_connection_metrics:'서버 지표 조회',save_ingress:'접근 설정 저장',publish:'워크플로우 배포',rollback_deployment:'이전 설정 복원',create_key:'API 키 발급',update_key_policy:'API 키 제한 변경',revoke_key:'API 키 폐기',save_retention:'보관 기간 변경',run_evaluation:'검증 실행',start_evaluation:'검증 시작',cancel_evaluation:'검증 취소',retry_evaluation:'검증 재시도',admin_login:'관리자 로그인',admin_login_failed:'관리자 로그인 실패',admin_login_throttled:'관리자 로그인 재시도 제한',admin_logout:'관리자 로그아웃',set_deployment_paused:'API 호출 상태 변경',set_workflow_archived:'워크플로우 보관 상태 변경',set_policy_archived:'정책 보관 상태 변경'};
-const newConnection = (): Connection => ({ id: `conn-${crypto.randomUUID()}`, name: '', baseUrl: '', model: '', role: 'main', mode: 'vllm', secretEnv: '', timeoutMs: 30000 });
+const newConnection = (): Connection => ({ id: `conn-${randomUuid()}`, name: '', baseUrl: '', model: '', role: 'main', mode: 'vllm', secretEnv: '', timeoutMs: 30000 });
 
 function CopyButton({ value, notify, label = '복사' }: { value: string; notify: (message: string) => void; label?: string }) {
   const [copied, setCopied] = useState(false);

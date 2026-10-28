@@ -96,6 +96,8 @@ Compose의 `.env`는 변수 보간용입니다. 컨테이너에는 `docker-compo
 
 `docker compose restart`는 기존 컨테이너를 재시작합니다. 환경변수 변경은 `docker compose up -d`로 재생성하고 코드 변경은 `docker compose up --build -d`로 반영합니다. 외부 공개용 reverse proxy와 인증서 구성은 포함하지 않습니다.
 
+다른 컴퓨터에서 접속하려면 `ports`를 `"0.0.0.0:8787:8787"`로 바꾸고 `.env`의 `PUBLIC_BASE_URL`을 실제 접속 주소로 설정합니다. `AEGIS_ALLOWED_HOSTS`를 별도로 지정했다면 접속할 IP나 도메인도 허용하세요. HTTP의 서버 IP 주소에서도 모델 서버, 정책과 데이터셋 생성 및 검증을 지원합니다. 브라우저의 클립보드 자동 복사는 HTTPS 또는 localhost가 필요할 수 있습니다.
+
 ## 모델 연결과 정책 구성
 
 기본 모델 연결은 예제 모드입니다. 실제 모델을 연결하는 순서는 다음과 같습니다.

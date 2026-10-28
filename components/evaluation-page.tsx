@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { PolicyExecutionSummary, policyRouteLabels } from './policy-execution-summary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, ArrowRight, Check, CheckCircle2, ChevronRight, Clock3, Copy, Database, Download, FileJson, GitCompareArrows, History, LoaderCircle, Pause, Play, RefreshCw, Save, Search, Server, ShieldAlert, Square, X, XCircle } from 'lucide-react';
@@ -347,8 +349,8 @@ export function EvaluationPage({state,act,notify,initialWorkflowId,initialDatase
     const criteriaError=evaluationCaseCriteriaError(criteria,caseConfirmed);setCaseError(criteriaError);if(criteriaError)return;
     if(existing&&existing.rows.length>=100){notify('선택한 데이터셋에 100개 항목이 있습니다. 다른 데이터셋을 선택하세요.');return;}
     if(!existing&&(!caseName.trim()||state.datasets.length>=30)){notify('새 데이터셋 이름을 입력하거나 기존 데이터셋을 선택하세요.');return;}
-    const row:DatasetRow={id:`row-${crypto.randomUUID()}`,input:lastInput,...evaluationCaseExpectation(criteria),...(caseCategory.trim()?{category:caseCategory.trim()}:{}),...(caseNote.trim()?{note:caseNote.trim()}:{} )};
-    const next:Dataset=existing?{...existing,rows:[...existing.rows,row]}:{id:`ds-${crypto.randomUUID()}`,name:caseName.trim(),description:'요청 한 건 검증에서 저장한 사례',rows:[row]};
+    const row:DatasetRow={id:`row-${randomUuid()}`,input:lastInput,...evaluationCaseExpectation(criteria),...(caseCategory.trim()?{category:caseCategory.trim()}:{}),...(caseNote.trim()?{note:caseNote.trim()}:{} )};
+    const next:Dataset=existing?{...existing,rows:[...existing.rows,row]}:{id:`ds-${randomUuid()}`,name:caseName.trim(),description:'요청 한 건 검증에서 저장한 사례',rows:[row]};
     setControlBusy('save-case');try{const response=await act({action:'save_dataset',dataset:next});if(mounted.current&&response){setSaveCase(false);notify('요청 내용을 검증 데이터셋에 저장했습니다.');}}finally{if(mounted.current)setControlBusy('');}
   }
   const editTrace=(value:ExecutionResult,request:string,sourceWorkflowId:string,fingerprint?:string)=>(ruleId:string)=>onEditRule?.(sourceWorkflowId,ruleId,request,value,fingerprint,captureContext());

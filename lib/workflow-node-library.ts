@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
 import type { FlowControlNode, RuleGroup, Workflow } from './aegis-types';
 // @ts-expect-error Node's source test runner resolves explicit TypeScript paths.
 import { captureInsertTarget, type FlowInsertTarget, type FlowStage } from './workflow-connections.ts';
@@ -50,7 +52,7 @@ export function addWorkflowControlNode(workflow:Workflow,stage:FlowStage,kind:Fl
   requireThat(['condition','fork','join'].includes(kind),'조건 분기, 병렬 분기 또는 결과 합류를 선택하세요.');
   const graph=getStageGraph(workflow,stage);
   requireThat(graph.nodes.length<12,'한 구간의 제어 노드는 최대 12개입니다.');
-  const nodeId=options.id===undefined?`control-${crypto.randomUUID()}`:options.id;
+  const nodeId=options.id===undefined?`control-${randomUuid()}`:options.id;
   uniqueNodeId(workflow,nodeId);
   const target=capturedTarget(workflow,stage,options.target);
   const extraEdges=target?(kind==='condition'?2:1):0;
@@ -66,7 +68,7 @@ export function addWorkflowControlNode(workflow:Workflow,stage:FlowStage,kind:Fl
 export function addWorkflowCheckGroup(workflow:Workflow,stage:FlowStage,options:ControlOptions={}):{workflow:Workflow;groupId:string} {
   validateStage(workflow,stage);
   requireThat(workflow[stage].length<36,'한 구간의 검사 노드는 최대 36개입니다.');
-  const groupId=options.id===undefined?`group-${crypto.randomUUID()}`:options.id;uniqueNodeId(workflow,groupId);
+  const groupId=options.id===undefined?`group-${randomUuid()}`:options.id;uniqueNodeId(workflow,groupId);
   const target=capturedTarget(workflow,stage,options.target);
   requireThat(getStageGraph(workflow,stage).edges.length+(target?1:0)<=64,'검사 조합을 추가하면 연결선 한도 64개를 초과합니다.');
   const next=materialize(workflow),group:RuleGroup={id:groupId,name:'새 검사 조합',mode:'any',rules:[]};

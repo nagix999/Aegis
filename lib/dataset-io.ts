@@ -1,4 +1,6 @@
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { fieldAssertionErrors } from './output-expectations.ts';
 import type { Dataset, DatasetRow } from './aegis-types';
 
@@ -125,7 +127,7 @@ export function parseDatasetFile(source:string,filename:string):Pick<Dataset,'na
     if(record.expected!=='allow'&&record.expected!=='block')throw new Error(`${index+1}행 expected 값은 allow(허용) 또는 block(차단)이어야 합니다.`);
     const errors=metadataErrors(record,`${index+1}행`);if(errors.length)throw new Error(errors[0]);
     const metadata=Object.fromEntries(optionalColumns.filter(key=>record[key]!==undefined).map(key=>[key,record[key]]));
-    return {id:`row-${crypto.randomUUID()}`,input:record.input,expected:record.expected,...metadata};
+    return {id:`row-${randomUuid()}`,input:record.input,expected:record.expected,...metadata};
   });
   const result={name:name.trim(),description,rows};const errors=datasetErrors(result);if(errors.length)throw new Error(errors[0]);return result;
 }

@@ -13,7 +13,7 @@ assert.ok(declaration);
 const code=ts.transpileModule(declaration.getText(ast)+';globalThis.saveCase=saveResultCase;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 function fixture(){
   const posts=[],notices=[];
-  const host={evaluationCaseCriteriaError,evaluationCaseExpectation,result:{status:'allow',output:'MODEL_OUTPUT_MUST_NOT_BE_SAVED',policyRoute:'main'},lastInput:'직접 입력한 예제 요청',readOnly:false,state:{datasets:[]},caseDatasetId:'',caseName:'분기 검증',caseExpected:'',caseCategory:'정책',caseNote:'사용자 기준',caseStage:'',caseRule:'',caseRoute:'',casePolicyCode:'',caseConfirmed:false,mounted:{current:true},crypto:{randomUUID:()=> 'example-safe-identifier'},caseError:'',controlBusy:'',saveCase:true,notify(message){notices.push(message);},async act(payload){posts.push(structuredClone(payload));return{state:{datasets:[payload.dataset]}};}};
+  const host={evaluationCaseCriteriaError,evaluationCaseExpectation,result:{status:'allow',output:'MODEL_OUTPUT_MUST_NOT_BE_SAVED',policyRoute:'main'},lastInput:'직접 입력한 예제 요청',readOnly:false,state:{datasets:[]},caseDatasetId:'',caseName:'분기 검증',caseExpected:'',caseCategory:'정책',caseNote:'사용자 기준',caseStage:'',caseRule:'',caseRoute:'',casePolicyCode:'',caseConfirmed:false,mounted:{current:true},randomUuid:()=> 'example-safe-identifier',caseError:'',controlBusy:'',saveCase:true,notify(message){notices.push(message);},async act(payload){posts.push(structuredClone(payload));return{state:{datasets:[payload.dataset]}};}};
   for(const[key,property]of Object.entries({setCaseError:'caseError',setControlBusy:'controlBusy',setSaveCase:'saveCase'}))host[key]=value=>{host[property]=value;};
   const context=vm.createContext(host);vm.runInContext(code,context);return{host,posts,notices,save:context.saveCase};
 }

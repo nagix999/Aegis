@@ -1,5 +1,7 @@
 'use client';
 
+import { randomUuid } from '@/lib/client-id';
+
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Archive, ArchiveRestore, ArrowRight, Braces, ChevronDown, FileCheck2, FlaskConical, GitBranch, Loader2, Plus, Save, Search, ShieldCheck, Trash2, TriangleAlert } from 'lucide-react';
 import type { PolicyDefinition, PolicyRevision } from '@/lib/aegis-types';
@@ -13,7 +15,7 @@ import { PolicyFieldAssertions } from './policy-field-assertions';
 import { Empty, PageHeading, Tag, timeLabel, type PageProps, type PolicyTest } from './console-ui';
 import './policies.css';
 
-const newId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
+const newId = (prefix: string) => `${prefix}-${randomUuid()}`;
 
 export function PoliciesPage({ state, act, notify, loading, busy, onOpenWorkflowPolicy, initialPolicyId, initialPolicyVersion, requestId, onSelectionChange }: PageProps & { loading: boolean; busy: boolean; onOpenWorkflowPolicy?:(workflowId:string)=>void; initialPolicyId?:string; initialPolicyVersion?:number; requestId?:string; onSelectionChange?:(policyId:string,version:number)=>void }) {
   const revisions = state.policies ?? [];

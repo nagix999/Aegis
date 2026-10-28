@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
 import type { CanvasZone, Workflow } from './aegis-types';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { getPolicyCanvasNodes, getWorkflowCanvasLinks } from './workflow-policy-canvas.ts';
@@ -410,5 +412,5 @@ export function createZoneForNodes(workflow: Workflow, keys: string[], options: 
       y = hit.y + hit.height + FLOW_GAP;
     }
   }
-  return { id: options.id || `zone-${crypto.randomUUID().slice(0, 8)}`, name: options.name?.trim() || '새 그룹', color: options.color || 'slate', nodeKeys, x, y, width: Math.min(ZONE_SIZE_LIMIT, width), height: Math.min(ZONE_SIZE_LIMIT, height) };
+  return { id: options.id || `zone-${randomUuid().slice(0, 8)}`, name: options.name?.trim() || '새 그룹', color: options.color || 'slate', nodeKeys, x, y, width: Math.min(ZONE_SIZE_LIMIT, width), height: Math.min(ZONE_SIZE_LIMIT, height) };
 }

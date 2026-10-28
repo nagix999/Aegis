@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { sha256Hex } from './sha256.ts';
 import type { Connection, Dataset, DatasetRow, ExecutionResult, Workflow } from './aegis-types';
 // @ts-expect-error Node's source test runner uses explicit TypeScript imports.
 import { ENGINE_VERSION } from './execution-provenance.ts';
@@ -13,8 +15,7 @@ function canonical(value: unknown): string {
   return JSON.stringify(value) ?? 'null';
 }
 async function digest(value: unknown): Promise<string> {
-  const bytes=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(canonical(value)));
-  return Array.from(new Uint8Array(bytes),v=>v.toString(16).padStart(2,'0')).join('');
+  return sha256Hex(canonical(value));
 }
 export function referencedConnections(workflow: Workflow, connections: Connection[]): Connection[] {
   const ids=new Set([workflow.mainConnectionId,...[...workflow.pre,...workflow.post].flatMap(g=>g.rules.filter(r=>r.enabled&&r.kind==='llm').map(r=>r.config.connectionId))]);

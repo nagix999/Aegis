@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
 import type { Connection, Rule, RuleKind } from './aegis-types';
 
 export type NodeTemplate = { id: string; name: string; description: string; category: 'rule'|'llm'; kind: RuleKind; config: Rule['config']; defaultStage: 'pre'|'post' };
@@ -18,5 +20,5 @@ export function makeRule(templateId:string, connections:Connection[]):Rule {
   if(!template)throw new Error('지원하지 않는 검사입니다.');
   const config=structuredClone(template.config);
   if(template.kind==='llm')config.connectionId=connections.find(c=>c.role==='guard'||c.role==='both')?.id;
-  return {id:`rule-${crypto.randomUUID().slice(0,8)}`,name:template.name,description:template.description,kind:template.kind,enabled:true,config};
+  return {id:`rule-${randomUuid().slice(0,8)}`,name:template.name,description:template.description,kind:template.kind,enabled:true,config};
 }

@@ -1,3 +1,5 @@
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { randomUuid } from './client-id.ts';
 import type { FlowCondition, FlowControlNode, FlowEdge, Workflow } from './aegis-types';
 // @ts-expect-error Node's source test runner uses explicit TypeScript imports.
 import { createStageGraph, getStageGraph, validateWorkflowGraph } from './workflow-graph.ts';
@@ -88,7 +90,7 @@ export function buildBranchSelection(workflow: Workflow, preview: BranchSelectio
   next.graph ||= { version: 1, pre: createStageGraph(next.pre), post: createStageGraph(next.post) };
   const graph = next.graph[preview.stage];
   const used = new Set((['pre', 'post'] as const).flatMap(stage => [...next[stage].flatMap(group => [group.id, ...group.rules.map(rule => rule.id)]), ...next.graph![stage].nodes.map(node => node.id), ...next.graph![stage].edges.map(edge => edge.id)]));
-  const generate = options.identifier || ((prefix: string) => `${prefix}-${crypto.randomUUID().slice(0, 12)}`);
+  const generate = options.identifier || ((prefix: string) => `${prefix}-${randomUuid().slice(0, 12)}`);
   function fresh(prefix: string): string {
     for (let attempt = 0; attempt < 64; attempt++) {
       const id = generate(prefix);
