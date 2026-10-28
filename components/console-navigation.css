@@ -1,0 +1,8 @@
+.breadcrumb-object{max-width:28vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#344256}
+.topbar .system-error{color:#ad482d}
+.topbar-right .btn{font-size:12px;min-height:30px}
+.main-content [hidden]{display:none!important}
+.policy-node-path{display:inline-flex;gap:5px;align-items:center;flex-wrap:wrap}
+.policy-node-path button{border:1px solid #dce4ec;border-radius:5px;background:#f8fafc;padding:3px 7px;color:#285b73;font:inherit;cursor:pointer}
+.policy-node-path button:focus-visible{outline:2px solid #6464d6;outline-offset:2px}
+@media(max-width:640px){.breadcrumb-object{max-width:22vw}.topbar-right .btn{min-height:32px}.version-label{display:none}}

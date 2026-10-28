@@ -1,0 +1,32 @@
+.console-private[hidden] { display: none !important; }
+.console-login { min-height: 100dvh; display: grid; place-items: center; padding: 32px 18px; background: #f7f8fa; color: #27303f; }
+.console-login-card { width: min(100%, 390px); padding: 34px; border: 1px solid #e2e7ee; border-radius: 12px; background: #fff; box-shadow: 0 8px 32px #27303f06; }
+.console-login-brand { display: inline-flex; align-items: center; gap: 10px; color: #283248; font-size: 27px; font-weight: 750; letter-spacing: -1px; text-decoration: none; margin-bottom: 34px; }
+.console-login-brand > span { display: grid; place-items: center; width: 36px; height: 38px; border-radius: 9px; background: #626cdc; color: #fff; }
+.console-login-heading { display: flex; align-items: center; gap: 9px; color: #526073; }
+.console-login-heading h1 { margin: 0; font-size: 19px; font-weight: 650; color: #27303f; }
+.console-login-card p, .console-logout-dialog p { font-size: 13px; line-height: 1.7; color: #64748b; margin: 13px 0 22px; word-break: keep-all; }
+.console-login-card form { display: flex; flex-direction: column; }
+.console-login-card label { display: block; font-size: 12px; color: #526073; font-weight: 550; margin: 0 0 8px; }
+.console-login-card input { width: 100%; min-height: 41px; padding: 9px 12px; margin: 0 0 19px; border: 1px solid #dfe5ed; border-radius: 6px; background: #fff; color: #27303f; font-size: 14px; }
+.console-login button, .console-logout-dialog button { cursor: pointer; font: inherit; border-radius: 6px; }
+.console-login button:disabled, .console-logout-dialog button:disabled, .console-auth-logout:disabled { cursor: not-allowed; opacity: .55; }
+.console-login-submit { display: inline-flex; justify-content: center; align-items: center; gap: 7px; min-height: 39px; border: 1px solid #5e68d4; background: #5e68d4; color: #fff; font-size: 13px; font-weight: 550; padding: 8px 16px; }
+.console-login-submit:hover:not(:disabled) { background: #555fcf; border-color: #555fcf; }
+.console-auth-error, .console-auth-notice { margin: 0 0 20px; padding: 11px 12px; font-size: 12px; line-height: 1.6; border-radius: 6px; }
+.console-auth-error { color: #9e4656; background: #fbf0f3; border: 1px solid #f0dce2; }
+.console-auth-notice { color: #53668a; background: #f1f4fb; border: 1px solid #e3e9f5; }
+.console-auth-recheck { display: block; margin: 17px auto 0; padding: 6px; color: #64748b; background: none; border: none; font-size: 12px; text-decoration: underline; text-underline-offset: 3px; }
+.console-login-check { display: flex; gap: 10px; align-items: center; color: #64748b; min-height: 82px; font-size: 13px; }
+.console-login input:focus-visible, .console-login button:focus-visible, .console-login a:focus-visible, .console-logout-dialog button:focus-visible, .console-auth-logout:focus-visible { outline: 2px solid #7b83e2; outline-offset: 3px; }
+.console-logout-dialog { width: min(460px, calc(100vw - 32px)); padding: 27px; border: 1px solid #e2e7ee; border-radius: 10px; background: #fff; color: #27303f; box-shadow: 0 18px 60px #1c254533; }
+.console-logout-dialog::backdrop { background: #1c254566; }
+.console-logout-dialog h2 { margin: 0; font-size: 18px; font-weight: 650; }
+.console-logout-dialog p + p { margin-top: -10px; font-size: 12px; }
+.console-logout-dialog footer { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
+.console-logout-dialog footer button:not(.console-login-submit) { min-height: 37px; border: 1px solid #dce2e9; background: #fff; padding: 8px 13px; color: #526073; }
+.app-shell .console-auth-logout { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 6px 9px; border: 1px solid #e2e7ee; border-radius: 6px; background: #fff; color: #647185; font-size: 11px; white-space: nowrap; }
+.app-shell .console-auth-logout:hover:not(:disabled) { border-color: #b8c2d3; background: #f9fafc; color: #37465d; }
+.console-auth-method { color: #647185; white-space: nowrap; font-size: 11px; }
+.console-auth-method.development { color: #8c6b34; padding: 4px 6px; border-radius: 4px; background: #faf5e9; }
+@media (max-width: 600px) { .console-login-card { padding: 27px 23px; } .console-auth-method { max-width: 95px; overflow: hidden; text-overflow: ellipsis; } }

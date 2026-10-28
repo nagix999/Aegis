@@ -1,0 +1,87 @@
+name: Python console authentication
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-auth-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  authentication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/requirements-dev.txt
+            backend/requirements-browser.txt
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.25.0
+          run_install: false
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Python test dependencies
+        run: python -m pip install -r backend/requirements-browser.txt
+
+      - name: Check TypeScript
+        run: pnpm exec tsc --noEmit
+
+      - name: Build Python UI
+        run: pnpm build:python-ui
+
+      - name: Check authentication and draft recovery helpers
+        run: >-
+          node --experimental-strip-types --test --test-isolation=none
+          tests/console-auth.test.ts tests/workflow-recovery.test.ts
+
+      - name: Run Python regression tests
+        run: >-
+          python -m pytest -c backend/pytest.ini backend/tests
+          --junitxml=test-results/python-junit.xml
+
+      - name: Install Chromium and system dependencies
+        run: python -m playwright install --with-deps chromium
+
+      - name: Run authentication browser tests
+        run: pnpm test:browser:auth --junitxml=test-results/auth/junit.xml
+
+      # Fixtures create synthetic accounts and temporary data, never a live server.
+      # Select report files explicitly so temporary databases cannot be uploaded.
+      - name: Upload test reports and failure diagnostics
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: python-auth-results
+          path: |
+            test-results/**/*.xml
+            test-results/**/*.png
+            test-results/**/*.zip
+            test-results/**/*.log
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,39 @@
+.we-policy-settings { margin-top: 18px; }
+.we-policy-boundary { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 20px; border-top: 1px solid #e3ebf4; background: #f6f9fd; }
+.we-policy-boundary > div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.we-policy-boundary strong { font-size: 12px; color: #455d79; overflow-wrap: anywhere; }
+.we-policy-boundary span { font-size: 11px; line-height: 1.6; color: #64748b; }
+.we-policy-boundary button { flex-shrink: 0; }
+@media (max-width: 600px) { .we-policy-boundary { padding: 10px; align-items: flex-start; } }
+.we-policy-settings .we-fine { line-height: 1.65; }
+.we-policy-snapshot { margin: 12px 0; padding: 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; font-size: 12px; }
+.we-policy-snapshot summary { cursor: pointer; font-weight: 600; }
+.we-policy-snapshot dl { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 7px; }
+.we-policy-snapshot dt { color: var(--muted, #64748b); }
+.we-policy-snapshot dd { margin: 0; overflow-wrap: anywhere; }
+.we-policy-snapshot pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font-size: 11px; line-height: 1.6; background: var(--surface-subtle, #f8fafc); padding: 8px; border-radius: 5px; }
+.we-policy-route { margin: 14px 0; padding: 10px; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; min-width: 0; }
+.we-policy-route legend { padding: 0 4px; font-size: 12px; font-weight: 600; }
+.we-policy-route legend code { display: inline-block; font-size: 10px; color: var(--muted, #64748b); overflow-wrap: anywhere; }
+.we-policy-route > p { margin: 0 0 10px; font-size: 11px; color: var(--muted, #64748b); line-height: 1.6; }
+.we-policy-route .field:last-child { margin-bottom: 0; }
+.we-policy-errors { font-size: 11px; color: #b45309; }
+.we-policy-boundary.has-graph { align-items: flex-start; }
+.we-policy-boundary.has-graph > div { flex: 1; }
+.policy-graph-preview { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; width: 100%; margin: 10px 0; }
+.policy-graph-column { min-width: 0; }
+.policy-graph-column > strong { display: flex; gap: 5px; align-items: center; font-size: 11px; margin-bottom: 6px; color: #64748b; }
+.policy-graph-node { display: flex; align-items: flex-start; gap: 7px; width: 100%; margin: 5px 0; padding: 9px; text-align: left; border: 1px solid #dbe3ef; border-radius: 7px; background: white; color: #334155; cursor: pointer; min-width: 0; }
+.policy-graph-node.selected { border-color: #608bd7; box-shadow: 0 0 0 1px #608bd7; }
+.policy-graph-node svg { flex-shrink: 0; margin-top: 2px; }
+.policy-graph-node > span { min-width: 0; }
+.policy-graph-node b { display: block; font-size: 11px; overflow-wrap: anywhere; }
+.policy-graph-node small { display: block; font-size: 10px; line-height: 1.6; color: #64748b; overflow-wrap: anywhere; margin-top: 4px; }
+.policy-graph-toolbar { display: flex; flex-wrap: wrap; gap: 7px; margin: 10px 0; }
+.policy-predicate { border-top: 1px solid #e2e8f0; margin: 10px 0; padding-top: 10px; }
+.policy-graph-editor .policy-graph-preview { grid-template-columns: 1fr; }
+.policy-graph-editor .we-policy-route > button { margin: 8px 0; }
+@media (max-width: 600px) { .we-policy-boundary .policy-graph-preview { grid-template-columns: 1fr; } }
+.we-policy-impact{display:flex;flex-direction:column;gap:10px;margin:12px 0;padding:12px;border:1px solid var(--line,#e5e7eb);border-radius:10px;background:var(--surface,#fff)}
+.we-policy-impact p,.we-policy-impact ul{margin:0}.we-policy-impact ul{padding-left:18px}.we-policy-impact code{overflow-wrap:anywhere}.we-policy-impact small{display:block;color:var(--muted,#6b7280)}
+.we-policy-impact-node{display:flex;width:100%;text-align:left;margin-top:6px;padding:8px;border:1px solid var(--line,#e5e7eb);border-radius:7px;background:var(--surface,#fff);color:inherit}.we-policy-impact-node code{display:block}.policy-port-field{margin-bottom:12px}.policy-port-field>.field{margin-bottom:6px}.policy-value-input{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}.policy-value-input>.field{margin-bottom:0}.policy-value-input>.btn{align-self:flex-start}.policy-value-input>small{font-size:11px;color:var(--muted,#6b7280)}

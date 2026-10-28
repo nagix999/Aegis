@@ -1,0 +1,26 @@
+.app-shell .mg-context-link{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 22px;border:1px solid #e2e8f0;border-radius:9px;background:#f8fafc}
+.app-shell .mg-context-link strong{font-size:13px;color:#475569}
+.app-shell .mg-context-link p{font-size:12px;line-height:1.8;color:#64748b;margin-top:5px}
+.app-shell .mg-context-link .btn{flex-shrink:0}
+.app-shell .mg-diagnostic-actions{display:flex;flex-wrap:wrap;gap:8px;padding:0 23px 18px}
+.app-shell .mg-access-status{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;color:#64748b;font-size:12px;line-height:1.8}
+.app-shell .mg-draft-warning,.app-shell .mg-draft-error{padding:12px 16px;border:1px solid #e9d8a6;border-radius:7px;background:#fffbeb;color:#854d0e;font-size:12px;line-height:1.8}
+.app-shell .mg-draft-error{border-color:#fecaca;background:#fff7f7;color:#b91c1c}
+.app-shell .mg-role-details>summary{cursor:pointer;padding:15px 24px;color:#64748b;font-size:12px}
+.app-shell .mg-role-details .mg-role-description{padding-top:0}
+.app-shell .mg-role-details>summary:focus-visible{outline:2px solid #6d8caa;outline-offset:-4px;border-radius:7px}
+.app-shell .mg-deploy-meta{gap:8px}
+.app-shell .mg-deployment-selected{background:#eef5fb!important;outline:2px solid #bfd4e8;outline-offset:-2px}
+.app-shell .mg-deployment-focus{scroll-margin-top:90px}
+.app-shell .mg-deployment-focus:focus{outline:2px solid #6d8caa;outline-offset:3px}
+.app-shell .mg-deployment-focus-body{padding:20px 24px;display:flex;gap:12px;flex-wrap:wrap}
+.app-shell .mg-deployment-focus-body>.mg-access-status,.app-shell .mg-deployment-focus-body dl{width:100%}
+.app-shell .mg-deployment-focus-body dl{display:grid;grid-template-columns:100px minmax(0,1fr);gap:10px 14px;margin:0;font-size:12px;line-height:1.8}
+.app-shell .mg-deployment-focus-body dt{color:#64748b}
+.app-shell .mg-deployment-focus-body dd{margin:0;overflow-wrap:anywhere}
+.app-shell .wf-list-actions>button{display:inline-flex;align-items:center;gap:4px}
+.app-shell .wf-list-dialog .mg-draft-warning{margin:16px 0}
+.app-shell .wf-list-dialog .mg-draft-warning .btn{margin-top:12px}
+@media(max-width:650px){.app-shell .mg-context-link{align-items:flex-start;flex-direction:column;padding:16px}.app-shell .mg-access-status{align-items:flex-start}.app-shell .mg-diagnostic-actions{padding-left:18px;padding-right:18px}}
+
+.app-shell .mg-history .data-table{min-width:780px}

@@ -1,0 +1,2616 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Aegis Gateway API",
+    "description": "요청 검사와 응답 검사, 워크플로우 검증 및 OpenAI 형식 Gateway",
+    "version": "3.5.0"
+  },
+  "paths": {
+    "/api/auth/session": {
+      "get": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Session Status",
+        "operationId": "console_session",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "loginAvailable": {
+                      "type": "boolean"
+                    },
+                    "authMethod": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "session",
+                        "basic",
+                        "token",
+                        "proxy",
+                        "development",
+                        null
+                      ]
+                    },
+                    "identity": {
+                      "type": "string"
+                    },
+                    "csrfToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "loginAvailable",
+                    "authMethod"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Login",
+        "operationId": "console_login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "writeOnly": true
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "username",
+                  "password"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "loginAvailable": {
+                      "type": "boolean"
+                    },
+                    "authMethod": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "session",
+                        "basic",
+                        "token",
+                        "proxy",
+                        "development",
+                        null
+                      ]
+                    },
+                    "identity": {
+                      "type": "string"
+                    },
+                    "csrfToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "loginAvailable",
+                    "authMethod"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Logout",
+        "operationId": "console_logout",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "authenticated": {
+                      "type": "boolean"
+                    },
+                    "loginAvailable": {
+                      "type": "boolean"
+                    },
+                    "authMethod": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "session",
+                        "basic",
+                        "token",
+                        "proxy",
+                        "development",
+                        null
+                      ]
+                    },
+                    "identity": {
+                      "type": "string"
+                    },
+                    "csrfToken": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "type": "object",
+                  "required": [
+                    "authenticated",
+                    "loginAvailable",
+                    "authMethod"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ConsoleBasic": []
+          },
+          {
+            "AdminToken": []
+          },
+          {
+            "ConsoleSession": [],
+            "SessionCSRF": []
+          }
+        ]
+      }
+    },
+    "/api/console": {
+      "post": {
+        "tags": [
+          "Console"
+        ],
+        "summary": "Console",
+        "operationId": "console_action",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "action"
+                ],
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "description": "save_policy, test_policy, save_workflow, playground, start_evaluation, publish 등의 관리 작업"
+                  },
+                  "workflowId": {
+                    "type": "string"
+                  },
+                  "workflow": {
+                    "type": "object"
+                  },
+                  "dataset": {
+                    "type": "object"
+                  },
+                  "connection": {
+                    "type": "object"
+                  },
+                  "policy": {
+                    "oneOf": [
+                      {
+                        "$ref": "#/components/schemas/PolicyDefinition"
+                      },
+                      {
+                        "$ref": "#/components/schemas/KeyPolicy"
+                      }
+                    ],
+                    "description": "save_policy와 test_policy는 PolicyDefinition, API 키 관리 작업은 KeyPolicy를 사용합니다."
+                  },
+                  "expectedVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 1000,
+                    "description": "save_policy의 현재 최신 버전. 신규 정책은 0입니다."
+                  },
+                  "idempotencyKey": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": true
+              },
+              "examples": {
+                "playground": {
+                  "value": {
+                    "action": "playground",
+                    "workflowId": "wf-support",
+                    "input": "배송은 얼마나 걸리나요?"
+                  }
+                },
+                "publish": {
+                  "value": {
+                    "action": "publish",
+                    "workflowId": "wf-support",
+                    "idempotencyKey": "example-unique-publish"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "ConsoleBasic": []
+          },
+          {
+            "AdminToken": []
+          },
+          {
+            "ConsoleSession": [],
+            "SessionCSRF": []
+          }
+        ]
+      },
+      "get": {
+        "tags": [
+          "Console"
+        ],
+        "summary": "Console",
+        "operationId": "console_state",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "description": "관리 상태 또는 view별 조회입니다. view=dashboard는 원문을 제외한 보관 데이터의 집계, 차트와 표용 데이터셋, 집계 범위를 반환합니다. 요청 출처와 요청 판정은 요청 지표에만 적용하며 현재 배포는 기간과 무관합니다. 검증과 배포의 워크플로우 ID는 탭 드릴다운에 사용할 수 있습니다.",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "history",
+            "schema": {
+              "type": "boolean"
+            },
+            "description": "view=evaluations의 전체 보관 실행 기록을 검색합니다. 기본 최근 실행 조회는 그대로 유지합니다."
+          },
+          {
+            "in": "query",
+            "name": "runId",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "in": "query",
+            "name": "datasetId",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            }
+          },
+          {
+            "in": "query",
+            "name": "query",
+            "schema": {
+              "type": "string",
+              "maxLength": 160
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "view",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "dashboard",
+                "evaluations",
+                "deployment",
+                "logs",
+                "verification"
+              ]
+            },
+            "description": "생략하면 관리 상태를 반환합니다."
+          },
+          {
+            "in": "query",
+            "name": "from",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "dashboard 또는 logs의 시작 시각. 대시보드는 시간대를 포함한 ISO 시각이며 기본 최근 7일, 조회 범위 최대 90일입니다."
+          },
+          {
+            "in": "query",
+            "name": "to",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "description": "종료 시각(미포함). 대시보드의 기본값은 현재 시각입니다."
+          },
+          {
+            "in": "query",
+            "name": "workflowId",
+            "schema": {
+              "type": "string",
+              "maxLength": 120
+            },
+            "description": "대상 워크플로우 ID입니다."
+          },
+          {
+            "in": "query",
+            "name": "source",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "gateway",
+                "evaluation",
+                "playground",
+                "all"
+              ]
+            },
+            "description": "대시보드의 요청 출처는 기본 gateway이며 all을 허용합니다. logs 조회에는 all 대신 이 항목을 생략합니다."
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "allow",
+                "block",
+                "error",
+                "running",
+                "completed",
+                "cancelled"
+              ]
+            },
+            "description": "history=true 검증 조회에는 running, completed, cancelled, error 상태를 사용합니다. dashboard 또는 logs의 요청 판정입니다. 생략하면 모든 판정을 포함합니다. 대시보드의 검증 결과와 현재 배포에는 적용하지 않습니다."
+          }
+        ],
+        "security": [
+          {
+            "ConsoleBasic": []
+          },
+          {
+            "AdminToken": []
+          },
+          {
+            "ConsoleSession": []
+          }
+        ]
+      }
+    },
+    "/v1/models": {
+      "get": {
+        "tags": [
+          "Gateway"
+        ],
+        "summary": "Models",
+        "operationId": "list_models",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "GatewayBearer": []
+          }
+        ]
+      }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "tags": [
+          "Gateway"
+        ],
+        "summary": "Completions",
+        "operationId": "create_chat_completion",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "model": {
+                    "type": "string",
+                    "maxLength": 80
+                  },
+                  "messages": {
+                    "items": {
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "enum": [
+                            "system",
+                            "user",
+                            "assistant"
+                          ]
+                        },
+                        "content": {
+                          "type": "string",
+                          "maxLength": 16000,
+                          "minLength": 1
+                        }
+                      },
+                      "additionalProperties": false,
+                      "type": "object",
+                      "required": [
+                        "role",
+                        "content"
+                      ]
+                    },
+                    "type": "array",
+                    "maxItems": 32,
+                    "minItems": 1
+                  },
+                  "temperature": {
+                    "type": "number",
+                    "maximum": 2.0,
+                    "minimum": 0.0
+                  },
+                  "max_tokens": {
+                    "type": "integer",
+                    "maximum": 8192.0,
+                    "minimum": 1.0
+                  },
+                  "top_p": {
+                    "type": "number",
+                    "maximum": 1.0,
+                    "minimum": 0.0
+                  },
+                  "stream": {
+                    "type": "boolean",
+                    "enum": [
+                      false
+                    ]
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "model",
+                  "messages"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "GatewayBearer": []
+          }
+        ]
+      }
+    },
+    "/api/evaluations/worker": {
+      "post": {
+        "tags": [
+          "Worker"
+        ],
+        "summary": "Evaluation Worker",
+        "operationId": "evaluation_worker",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "heartbeat",
+                      "process",
+                      "disconnect"
+                    ]
+                  },
+                  "workerId": {
+                    "type": "string",
+                    "maxLength": 120
+                  }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                  "action",
+                  "workerId"
+                ]
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "WorkerBearer": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CanvasZone": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "color": {
+            "enum": [
+              "slate",
+              "blue",
+              "green",
+              "amber",
+              "violet"
+            ],
+            "title": "Color",
+            "type": "string"
+          },
+          "nodeKeys": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 988,
+            "title": "Nodekeys",
+            "type": "array"
+          },
+          "x": {
+            "maximum": 40000,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 40000,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          },
+          "width": {
+            "maximum": 50000,
+            "minimum": 240,
+            "title": "Width",
+            "type": "number"
+          },
+          "height": {
+            "maximum": 50000,
+            "minimum": 160,
+            "title": "Height",
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "color",
+          "nodeKeys",
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "title": "CanvasZone",
+        "type": "object"
+      },
+      "Connection": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "baseUrl": {
+            "title": "Baseurl",
+            "type": "string"
+          },
+          "model": {
+            "title": "Model",
+            "type": "string"
+          },
+          "role": {
+            "enum": [
+              "main",
+              "guard",
+              "both"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "demo",
+              "vllm"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "secretEnv": {
+            "title": "Secretenv",
+            "type": "string"
+          },
+          "timeoutMs": {
+            "ge": 1000,
+            "le": 60000,
+            "title": "Timeoutms",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "baseUrl",
+          "model",
+          "role",
+          "mode",
+          "secretEnv",
+          "timeoutMs"
+        ],
+        "title": "Connection",
+        "type": "object"
+      },
+      "ExecutionLimits": {
+        "additionalProperties": false,
+        "properties": {
+          "timeoutMs": {
+            "ge": 1000,
+            "le": 600000,
+            "title": "Timeoutms",
+            "type": "integer"
+          },
+          "maxModelCalls": {
+            "ge": 1,
+            "le": 1000,
+            "title": "Maxmodelcalls",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "timeoutMs",
+          "maxModelCalls"
+        ],
+        "title": "ExecutionLimits",
+        "type": "object"
+      },
+      "FlowCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "operator": {
+            "enum": [
+              "contains",
+              "not_contains",
+              "length_gte",
+              "length_lte"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "title": "Value",
+            "type": "string"
+          },
+          "caseSensitive": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Casesensitive"
+          }
+        },
+        "required": [
+          "operator",
+          "value"
+        ],
+        "title": "FlowCondition",
+        "type": "object"
+      },
+      "FlowControlNode": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "condition",
+              "fork",
+              "join"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "condition": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FlowCondition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind"
+        ],
+        "title": "FlowControlNode",
+        "type": "object"
+      },
+      "FlowEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "enum": [
+                  "next",
+                  "true",
+                  "false"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to"
+        ],
+        "title": "FlowEdge",
+        "type": "object"
+      },
+      "PolicyActionNode": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "const": "action",
+            "title": "Kind",
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "main",
+              "respond",
+              "error"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "responseText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Responsetext"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errorcode"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errormessage"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "action"
+        ],
+        "title": "PolicyActionNode",
+        "type": "object"
+      },
+      "PolicyCondition": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "all",
+              "any"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "predicates": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyPredicate"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Predicates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "mode",
+          "predicates"
+        ],
+        "title": "PolicyCondition",
+        "type": "object"
+      },
+      "PolicyConditionNode": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "branch",
+              "rule"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "condition": {
+            "$ref": "#/components/schemas/PolicyCondition"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "condition"
+        ],
+        "title": "PolicyConditionNode",
+        "type": "object"
+      },
+      "PolicyDecision": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "title": "Code",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "label",
+          "description"
+        ],
+        "title": "PolicyDecision",
+        "type": "object"
+      },
+      "PolicyExample": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "title": "Input",
+            "type": "string"
+          },
+          "expectedDecision": {
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "title": "Expecteddecision",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "input",
+          "expectedDecision"
+        ],
+        "title": "PolicyExample",
+        "type": "object"
+      },
+      "PolicyGraph": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "ge": 1,
+            "le": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "entryNodeId": {
+            "title": "Entrynodeid",
+            "type": "string"
+          },
+          "nodes": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PolicyConditionNode"
+                },
+                {
+                  "$ref": "#/components/schemas/PolicyActionNode"
+                }
+              ]
+            },
+            "maxItems": 24,
+            "minItems": 2,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyGraphEdge"
+            },
+            "maxItems": 48,
+            "minItems": 2,
+            "title": "Edges",
+            "type": "array"
+          }
+        },
+        "required": [
+          "version",
+          "entryNodeId",
+          "nodes",
+          "edges"
+        ],
+        "title": "PolicyGraph",
+        "type": "object"
+      },
+      "PolicyGraphEdge": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "from": {
+            "title": "From",
+            "type": "string"
+          },
+          "to": {
+            "title": "To",
+            "type": "string"
+          },
+          "port": {
+            "enum": [
+              "true",
+              "false"
+            ],
+            "title": "Port",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "from",
+          "to",
+          "port"
+        ],
+        "title": "PolicyGraphEdge",
+        "type": "object"
+      },
+      "PolicyOutputExpectation": {
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "enum": [
+              "exact",
+              "schema",
+              "fields"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "fields": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PolicyPredicate"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Fields"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "title": "PolicyOutputExpectation",
+        "type": "object"
+      },
+      "PolicyPredicate": {
+        "additionalProperties": false,
+        "properties": {
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "operator": {
+            "enum": [
+              "eq",
+              "ne",
+              "gt",
+              "gte",
+              "lt",
+              "lte",
+              "contains",
+              "in",
+              "exists"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "value": {
+            "default": null,
+            "title": "Value"
+          }
+        },
+        "required": [
+          "path",
+          "operator"
+        ],
+        "title": "PolicyPredicate",
+        "type": "object"
+      },
+      "PolicyRevision": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "connectionId": {
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDecision"
+            },
+            "maxItems": 12,
+            "title": "Decisions",
+            "type": "array"
+          },
+          "examples": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PolicyExample"
+                },
+                {
+                  "$ref": "#/components/schemas/StructuredPolicyExample"
+                }
+              ]
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Examples",
+            "type": "array"
+          },
+          "formatVersion": {
+            "anyOf": [
+              {
+                "ge": 2,
+                "le": 2,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Formatversion"
+          },
+          "outputSchema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Outputschema"
+          },
+          "maxOutputTokens": {
+            "anyOf": [
+              {
+                "ge": 256,
+                "le": 4096,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxoutputtokens"
+          },
+          "connectionSnapshot": {
+            "$ref": "#/components/schemas/Connection"
+          },
+          "version": {
+            "ge": 1,
+            "le": 1000,
+            "title": "Version",
+            "type": "integer"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "prompt",
+          "connectionId",
+          "decisions",
+          "examples",
+          "connectionSnapshot",
+          "version",
+          "updatedAt"
+        ],
+        "title": "PolicyRevision",
+        "type": "object"
+      },
+      "PolicyRoute": {
+        "additionalProperties": false,
+        "properties": {
+          "decision": {
+            "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+            "title": "Decision",
+            "type": "string"
+          },
+          "action": {
+            "enum": [
+              "main",
+              "respond",
+              "error"
+            ],
+            "title": "Action",
+            "type": "string"
+          },
+          "responseText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Responsetext"
+          },
+          "errorCode": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errorcode"
+          },
+          "errorMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Errormessage"
+          }
+        },
+        "required": [
+          "decision",
+          "action"
+        ],
+        "title": "PolicyRoute",
+        "type": "object"
+      },
+      "PolicyRouting": {
+        "additionalProperties": false,
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/PolicyRevision"
+          },
+          "routes": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRoute"
+            },
+            "maxItems": 12,
+            "title": "Routes",
+            "type": "array"
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyGraph"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "policy",
+          "routes"
+        ],
+        "title": "PolicyRouting",
+        "type": "object"
+      },
+      "Position": {
+        "properties": {
+          "x": {
+            "maximum": 40000,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 40000,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "x",
+          "y"
+        ],
+        "title": "Position",
+        "type": "object"
+      },
+      "ReleasePolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "requireVerification": {
+            "title": "Requireverification",
+            "type": "boolean"
+          },
+          "requiredDatasetIds": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 30,
+            "title": "Requireddatasetids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "requireVerification",
+          "requiredDatasetIds"
+        ],
+        "title": "ReleasePolicy",
+        "type": "object"
+      },
+      "ResponseRetryPolicy": {
+        "properties": {
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "maxRetries": {
+            "ge": 1,
+            "le": 3,
+            "title": "Maxretries",
+            "type": "integer"
+          },
+          "instruction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Instruction"
+          }
+        },
+        "required": [
+          "enabled",
+          "maxRetries"
+        ],
+        "title": "ResponseRetryPolicy",
+        "type": "object"
+      },
+      "Rule": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "keyword",
+              "regex",
+              "length",
+              "llm",
+              "pii",
+              "json",
+              "required"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "config": {
+            "$ref": "#/components/schemas/RuleConfig"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "kind",
+          "enabled",
+          "config"
+        ],
+        "title": "Rule",
+        "type": "object"
+      },
+      "RuleConfig": {
+        "properties": {
+          "pattern": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pattern"
+          },
+          "maxLength": {
+            "anyOf": [
+              {
+                "ge": 1,
+                "le": 40000,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxlength"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Prompt"
+          },
+          "connectionId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Connectionid"
+          },
+          "piiTypes": {
+            "anyOf": [
+              {
+                "items": {
+                  "enum": [
+                    "email",
+                    "phone",
+                    "resident"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 3,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Piitypes"
+          },
+          "requiredKeys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Requiredkeys"
+          },
+          "jsonMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "object",
+                  "any"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Jsonmode"
+          },
+          "matchMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "any",
+                  "all"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Matchmode"
+          },
+          "guardProfile": {
+            "anyOf": [
+              {
+                "enum": [
+                  "custom",
+                  "injection",
+                  "safety"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Guardprofile"
+          }
+        },
+        "title": "RuleConfig",
+        "type": "object"
+      },
+      "RuleGroup": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "any",
+              "all"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/Rule"
+            },
+            "maxItems": 12,
+            "minItems": 1,
+            "title": "Rules",
+            "type": "array"
+          },
+          "required": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Required"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "mode",
+          "rules"
+        ],
+        "title": "RuleGroup",
+        "type": "object"
+      },
+      "StageGraph": {
+        "additionalProperties": false,
+        "properties": {
+          "nodes": {
+            "items": {
+              "$ref": "#/components/schemas/FlowControlNode"
+            },
+            "maxItems": 12,
+            "title": "Nodes",
+            "type": "array"
+          },
+          "edges": {
+            "items": {
+              "$ref": "#/components/schemas/FlowEdge"
+            },
+            "maxItems": 64,
+            "title": "Edges",
+            "type": "array"
+          }
+        },
+        "required": [
+          "nodes",
+          "edges"
+        ],
+        "title": "StageGraph",
+        "type": "object"
+      },
+      "StructuredPolicyExample": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "title": "Input",
+            "type": "string"
+          },
+          "expectedOutput": {
+            "title": "Expectedoutput"
+          },
+          "expectation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyOutputExpectation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "input",
+          "expectedOutput"
+        ],
+        "title": "StructuredPolicyExample",
+        "type": "object"
+      },
+      "WorkflowCloneSource": {
+        "additionalProperties": false,
+        "properties": {
+          "workflowId": {
+            "title": "Workflowid",
+            "type": "string"
+          },
+          "ruleIds": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Ruleids",
+            "type": "object"
+          }
+        },
+        "required": [
+          "workflowId",
+          "ruleIds"
+        ],
+        "title": "WorkflowCloneSource",
+        "type": "object"
+      },
+      "WorkflowGraph": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "ge": 1,
+            "le": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "pre": {
+            "$ref": "#/components/schemas/StageGraph"
+          },
+          "post": {
+            "$ref": "#/components/schemas/StageGraph"
+          }
+        },
+        "required": [
+          "version",
+          "pre",
+          "post"
+        ],
+        "title": "WorkflowGraph",
+        "type": "object"
+      },
+      "WorkflowLayout": {
+        "properties": {
+          "version": {
+            "ge": 1,
+            "le": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "positions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/Position"
+            },
+            "title": "Positions",
+            "type": "object"
+          },
+          "zones": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CanvasZone"
+                },
+                "maxItems": 32,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Zones"
+          },
+          "pinnedKeys": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "maxItems": 124,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Pinnedkeys"
+          }
+        },
+        "required": [
+          "version",
+          "positions"
+        ],
+        "title": "WorkflowLayout",
+        "type": "object"
+      },
+      "Workflow": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "alias": {
+            "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$",
+            "title": "Alias",
+            "type": "string"
+          },
+          "mainConnectionId": {
+            "title": "Mainconnectionid",
+            "type": "string"
+          },
+          "inputScope": {
+            "anyOf": [
+              {
+                "enum": [
+                  "conversation",
+                  "user_messages",
+                  "last_user"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Inputscope"
+          },
+          "executionLimits": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExecutionLimits"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "pre": {
+            "items": {
+              "$ref": "#/components/schemas/RuleGroup"
+            },
+            "maxItems": 36,
+            "title": "Pre",
+            "type": "array"
+          },
+          "post": {
+            "items": {
+              "$ref": "#/components/schemas/RuleGroup"
+            },
+            "maxItems": 36,
+            "title": "Post",
+            "type": "array"
+          },
+          "updatedAt": {
+            "title": "Updatedat",
+            "type": "string"
+          },
+          "responseRetry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResponseRetryPolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "releasePolicy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReleasePolicy"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowLayout"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "graph": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowGraph"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "cloneSource": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowCloneSource"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "policyRouting": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRouting"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "alias",
+          "mainConnectionId",
+          "pre",
+          "post",
+          "updatedAt"
+        ],
+        "title": "Workflow",
+        "type": "object"
+      },
+      "PolicyDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "prompt": {
+            "title": "Prompt",
+            "type": "string"
+          },
+          "connectionId": {
+            "title": "Connectionid",
+            "type": "string"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyDecision"
+            },
+            "maxItems": 12,
+            "title": "Decisions",
+            "type": "array"
+          },
+          "examples": {
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PolicyExample"
+                },
+                {
+                  "$ref": "#/components/schemas/StructuredPolicyExample"
+                }
+              ]
+            },
+            "maxItems": 30,
+            "minItems": 1,
+            "title": "Examples",
+            "type": "array"
+          },
+          "formatVersion": {
+            "anyOf": [
+              {
+                "ge": 2,
+                "le": 2,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Formatversion"
+          },
+          "outputSchema": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Outputschema"
+          },
+          "maxOutputTokens": {
+            "anyOf": [
+              {
+                "ge": 256,
+                "le": 4096,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxoutputtokens"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "prompt",
+          "connectionId",
+          "decisions",
+          "examples"
+        ],
+        "title": "PolicyDefinition",
+        "type": "object"
+      },
+      "Conversation": {
+        "items": {
+          "$ref": "#/components/schemas/ConversationMessage"
+        },
+        "maxItems": 32,
+        "minItems": 1,
+        "title": "Conversation",
+        "type": "array"
+      },
+      "ConversationMessage": {
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "enum": [
+              "system",
+              "user",
+              "assistant"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "content": {
+            "title": "Content",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role",
+          "content"
+        ],
+        "title": "ConversationMessage",
+        "type": "object"
+      },
+      "DatasetRow": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "input": {
+            "title": "Input",
+            "type": "string"
+          },
+          "messages": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Conversation"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "generationOptions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GenerationSettings"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "expected": {
+            "enum": [
+              "allow",
+              "block"
+            ],
+            "title": "Expected",
+            "type": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Category"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Note"
+          },
+          "expectedStage": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pre",
+                  "post",
+                  "main",
+                  "complete"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedstage"
+          },
+          "expectedRuleId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedruleid"
+          },
+          "expectedDecision": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expecteddecision"
+          },
+          "expectedRoute": {
+            "anyOf": [
+              {
+                "enum": [
+                  "main",
+                  "respond",
+                  "error"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedroute"
+          },
+          "expectedPolicyCode": {
+            "anyOf": [
+              {
+                "pattern": "^[A-Z][A-Z0-9_]{0,63}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpolicycode"
+          },
+          "expectedPolicyFields": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/PolicyPredicate"
+                },
+                "maxItems": 12,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expectedpolicyfields"
+          }
+        },
+        "required": [
+          "id",
+          "input",
+          "expected"
+        ],
+        "title": "DatasetRow",
+        "type": "object"
+      },
+      "GenerationSettings": {
+        "additionalProperties": false,
+        "properties": {
+          "temperature": {
+            "anyOf": [
+              {
+                "maximum": 2,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Temperature"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "ge": 1,
+                "le": 8192,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Max Tokens"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "maximum": 1,
+                "minimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Top P"
+          }
+        },
+        "title": "GenerationSettings",
+        "type": "object"
+      },
+      "Dataset": {
+        "properties": {
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/DatasetRow"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Rows",
+            "type": "array"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "description",
+          "rows"
+        ],
+        "title": "Dataset",
+        "type": "object"
+      },
+      "KeyPolicy": {
+        "properties": {
+          "allowedModels": {
+            "anyOf": [
+              {
+                "items": {
+                  "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$",
+                  "type": "string"
+                },
+                "maxItems": 100,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Allowedmodels"
+          },
+          "expiresAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Expiresat"
+          },
+          "rpmLimit": {
+            "anyOf": [
+              {
+                "ge": 1,
+                "le": 100000,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Rpmlimit"
+          },
+          "tpmLimit": {
+            "anyOf": [
+              {
+                "ge": 1,
+                "le": 10000000,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tpmlimit"
+          },
+          "maxConcurrent": {
+            "anyOf": [
+              {
+                "ge": 1,
+                "le": 1000,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Maxconcurrent"
+          }
+        },
+        "title": "KeyPolicy",
+        "type": "object"
+      },
+      "RetentionPolicy": {
+        "properties": {
+          "logDays": {
+            "ge": 1,
+            "le": 3650,
+            "title": "Logdays",
+            "type": "integer"
+          },
+          "evaluationDays": {
+            "ge": 1,
+            "le": 3650,
+            "title": "Evaluationdays",
+            "type": "integer"
+          },
+          "auditDays": {
+            "ge": 1,
+            "le": 3650,
+            "title": "Auditdays",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "logDays",
+          "evaluationDays",
+          "auditDays"
+        ],
+        "title": "RetentionPolicy",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "ConsoleBasic": {
+        "type": "http",
+        "scheme": "basic"
+      },
+      "AdminToken": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-aegis-admin-token"
+      },
+      "ConsoleSession": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "aegis_session"
+      },
+      "SessionCSRF": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Aegis-CSRF"
+      },
+      "GatewayBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "ag_..."
+      },
+      "WorkerBearer": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  }
+}
