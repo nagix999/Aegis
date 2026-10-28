@@ -62,7 +62,7 @@ export function validateIngress(ingress: IngressPolicy): string[] {
   else for (const origin of ingress.allowedOrigins) {
     try {
       const url = new URL(origin);
-      if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) errors.push('허용 모델 서버 주소에는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: https://vllm.example.com');
+      if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin || url.username || url.password) errors.push('허용 모델 서버 주소에는 HTTP 또는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: http://vllm.example.internal:8000');
     } catch { errors.push('허용 모델 서버 주소를 확인하세요.'); }
   }
   return [...new Set(errors)];
@@ -80,7 +80,7 @@ export function validateConnection(connection: Connection): string[] {
   if (connection.mode === 'vllm') {
     try {
       const url = new URL(connection.baseUrl);
-      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !/^\/[^?#]*v1\/?$/.test(url.pathname)) errors.push('API 기본 주소는 /v1으로 끝나는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.');
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^\/[^?#]*v1\/?$/.test(url.pathname)) errors.push('API 기본 주소는 /v1으로 끝나는 HTTP 또는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.');
     } catch { errors.push('vLLM 서버의 API 기본 주소를 확인하세요.'); }
   }
   return errors;
@@ -155,7 +155,7 @@ function approvedUrl(connection: Connection, ingress: IngressPolicy, env: Env): 
   if (env.AEGIS_ALLOW_PRIVATE_UPSTREAM !== 'true') {
     const host = url.hostname.toLowerCase();
     const internal = host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal') || host.includes(':') || ipv4Allowed(host, ['0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8', '169.254.0.0/16', '172.16.0.0/12', '192.168.0.0/16', '224.0.0.0/4', '240.0.0.0/4']);
-    if (internal) throw new PolicyError('이 배포 환경에서는 사내 주소에 직접 연결할 수 없습니다. 접근 가능한 HTTPS 주소를 사용하거나 사내망에서 API 서버를 실행하세요.');
+    if (internal) throw new PolicyError('사내 모델 서버에 연결하려면 API 서버에서 AEGIS_ALLOW_PRIVATE_UPSTREAM=true를 설정하세요.');
   }
   return url;
 }
@@ -339,7 +339,7 @@ export async function diagnoseConnection(connection: Connection, ingress: Ingres
   if (!(await run(1, () => {
     approvedUrl(connection, ingress, env);
     authHeaders(connection, env);
-    return connection.secretEnv ? 'HTTPS 주소와 허용 목록을 확인했습니다. 인증 환경변수가 서버에 설정되어 있습니다.' : 'HTTPS 주소와 허용 목록을 확인했습니다. 인증 환경변수를 사용하지 않는 연결입니다.';
+    return connection.secretEnv ? '서버 주소와 허용 목록을 확인했습니다. 인증 환경변수가 서버에 설정되어 있습니다.' : '서버 주소와 허용 목록을 확인했습니다. 인증 환경변수를 사용하지 않는 연결입니다.';
   }))) return finish();
   if (!(await run(2, async () => {
     const test = await testConnection(connection, ingress, env);

@@ -15,7 +15,6 @@ import time
 import uuid
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -23,7 +22,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from .errors import ApiError
 from .auth import client_ip
 from .schemas import validate_payload
-from .engine import (collect_connection_metrics, diagnose_connection,
+from .engine import (_origin as model_origin, collect_connection_metrics, diagnose_connection,
                      execute_workflow, ipv4_allowed, test_connection,
                      validate_connection, validate_ingress, validate_workflow)
 from .graph import validate_workflow_graph
@@ -209,8 +208,7 @@ def validate_snapshot_connections(connections: list, ingress: dict, env: dict, w
     for connection in snapshots:
         if connection.get("mode") != "vllm":
             continue
-        parsed = urlparse(connection["baseUrl"])
-        origin = f"{parsed.scheme}://{parsed.netloc}"
+        origin = model_origin(connection["baseUrl"])
         require(origin in ingress["allowedOrigins"], f"{connection['name']}: 접근 설정의 허용 모델 서버에 주소를 추가하세요.")
         secret = connection.get("secretEnv")
         if secret:

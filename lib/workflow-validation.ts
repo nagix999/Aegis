@@ -41,7 +41,7 @@ export function validateIngress(ingress: IngressPolicy): string[] {
   else for (const origin of ingress.allowedOrigins) {
     try {
       const url = new URL(origin);
-      if (url.protocol !== 'https:' || url.origin !== origin || url.username || url.password) errors.push('허용 모델 서버 주소에는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: https://vllm.example.com');
+      if (!['http:', 'https:'].includes(url.protocol) || url.origin !== origin || url.username || url.password) errors.push('허용 모델 서버 주소에는 HTTP 또는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: http://vllm.example.internal:8000');
     } catch { errors.push('허용 모델 서버 주소를 확인하세요.'); }
   }
   return [...new Set(errors)];
@@ -59,7 +59,7 @@ export function validateConnection(connection: Connection): string[] {
   if (connection.mode === 'vllm') {
     try {
       const url = new URL(connection.baseUrl);
-      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash || !/^\/[^?#]*v1\/?$/.test(url.pathname)) errors.push('API 기본 주소는 /v1으로 끝나는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.');
+      if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || !/^\/[^?#]*v1\/?$/.test(url.pathname)) errors.push('API 기본 주소는 /v1으로 끝나는 HTTP 또는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.');
     } catch { errors.push('vLLM 서버의 API 기본 주소를 확인하세요.'); }
   }
   return errors;

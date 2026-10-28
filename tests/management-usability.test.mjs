@@ -21,6 +21,17 @@ const { render } = await import(pathToFileURL(join(temporary, 'build/entry.mjs')
 const props = () => ({ state: { ...initialState(), role: 'admin' }, act: async () => undefined, notify: () => {} });
 const ingress = { enabled: false, allowedCidrs: [], allowedOrigins: ['https://saved.example'] };
 
+test('model connection and access settings explain HTTP and HTTPS support', () => {
+  const p = props();
+  const connections = render('ConnectionsPage', p);
+  assert.match(connections, /HTTP 또는 HTTPS의 OpenAI 호환 API 주소/);
+  const access = render('AccessPage', p);
+  assert.match(access, /HTTP \/ HTTPS 지원/);
+  assert.match(access, /허용 서버 주소 \(HTTP 또는 HTTPS\)/);
+  assert.match(access, /http:\/\/vllm\.example\.internal:8000/);
+  assert.doesNotMatch(access, /HTTPS만 지원/);
+});
+
 test('unrelated console refreshes and server changes preserve unsaved access edits', () => {
   let draft = createAccessDraftState(ingress);
   draft = accessDraftReducer(draft, { type: 'edit', patch: { origins: 'https://edited.example\nhttps://another.example' } });

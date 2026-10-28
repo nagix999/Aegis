@@ -111,10 +111,10 @@ def validate_ingress(ingress: dict) -> list[str]:
         for origin in origins:
             try:
                 parts = urlsplit(origin)
-                if not isinstance(origin, str) or parts.scheme != 'https' or not parts.hostname or origin != _origin(origin) or parts.username or parts.password:
+                if not isinstance(origin, str) or parts.scheme not in ('http', 'https') or not parts.hostname or origin != _origin(origin) or parts.username or parts.password:
                     raise ValueError()
             except (ValueError, TypeError, AttributeError):
-                errors.append('허용 모델 서버 주소에는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: https://vllm.example.com')
+                errors.append('허용 모델 서버 주소에는 HTTP 또는 HTTPS 주소와 포트만 입력하세요. 경로는 제외합니다. 예: http://vllm.internal:8000')
     return list(dict.fromkeys(errors))
 
 
@@ -147,11 +147,11 @@ def validate_connection(connection: dict) -> list[str]:
     if connection.get('mode') == 'vllm':
         try:
             parts = urlsplit(connection.get('baseUrl', ''))
-            if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment or not re.fullmatch(r'/[^?#]*v1/?', parts.path):
+            if parts.scheme not in ('http', 'https') or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment or not re.fullmatch(r'/[^?#]*v1/?', parts.path):
                 raise ValueError()
             _origin(connection['baseUrl'])
         except (ValueError, TypeError):
-            errors.append('API 기본 주소는 /v1으로 끝나는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.')
+            errors.append('API 기본 주소는 /v1으로 끝나는 HTTP 또는 HTTPS 주소로 입력하세요. 주소에 사용자 이름이나 비밀번호를 넣을 수 없습니다.')
     return errors
 
 
@@ -324,7 +324,7 @@ def approved_url(connection: dict, ingress: dict, env: dict) -> str:
         host = (urlsplit(base).hostname or '').lower().rstrip('.')
         internal = host == 'localhost' or host.endswith(('.localhost', '.local', '.internal')) or ':' in host or ipv4_allowed(host, ['0.0.0.0/8','10.0.0.0/8','100.64.0.0/10','127.0.0.0/8','169.254.0.0/16','172.16.0.0/12','192.168.0.0/16','224.0.0.0/4','240.0.0.0/4'])
         if internal:
-            raise PolicyError('이 배포 환경에서는 사내 주소에 직접 연결할 수 없습니다. 접근 가능한 HTTPS 주소를 사용하거나 사내망에서 API 서버를 실행하세요.')
+            raise PolicyError('사내 모델 서버에 연결하려면 API 서버에서 AEGIS_ALLOW_PRIVATE_UPSTREAM=true를 설정하세요.')
     return base
 
 
@@ -997,7 +997,7 @@ async def diagnose_connection(connection: dict, ingress: dict, env: dict, client
     def endpoint_check():
         approved_url(connection, ingress, env)
         auth_headers(connection, env)
-        return 'HTTPS 주소와 허용 목록을 확인했습니다. 인증 환경변수가 서버에 설정되어 있습니다.' if connection.get('secretEnv') else 'HTTPS 주소와 허용 목록을 확인했습니다. 인증 환경변수를 사용하지 않는 연결입니다.'
+        return '서버 주소와 허용 목록을 확인했습니다. 인증 환경변수가 서버에 설정되어 있습니다.' if connection.get('secretEnv') else '서버 주소와 허용 목록을 확인했습니다. 인증 환경변수를 사용하지 않는 연결입니다.'
     if not await run(1, endpoint_check):
         return finish()
     async def model_check():

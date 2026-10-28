@@ -45,21 +45,23 @@ def answers(*addresses):
 
 @pytest.mark.parametrize('address', ['127.0.0.1', '10.20.30.40', '169.254.169.254', '100.64.0.1', '0.0.0.0',
                                     '192.0.2.1', '224.0.0.1', '::1', 'fc00::1', 'fe80::1', 'ff02::1', '::ffff:8.8.8.8'])
-async def test_private_reserved_and_mapped_dns_answers_never_connect(address):
+@pytest.mark.parametrize('scheme', ['http', 'https'])
+async def test_private_reserved_and_mapped_dns_answers_never_connect(address, scheme):
     backend = RecordingBackend()
     transport = UpstreamTransport(backend=backend, resolver=answers(address))
     async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
         with pytest.raises(httpx.ConnectError):
-            await client.get('https://allowed.example/v1/models')
+            await client.get(f'{scheme}://allowed.example/v1/models')
     assert backend.connected == []
 
 
-async def test_any_private_answer_blocks_the_entire_destination_before_connecting():
+@pytest.mark.parametrize('scheme', ['http', 'https'])
+async def test_any_private_answer_blocks_the_entire_destination_before_connecting(scheme):
     backend = RecordingBackend()
     transport = UpstreamTransport(backend=backend, resolver=answers('8.8.8.8', '10.0.0.1'))
     async with httpx.AsyncClient(transport=transport, trust_env=False) as client:
         with pytest.raises(httpx.ConnectError):
-            await client.get('https://allowed.example/v1/models')
+            await client.get(f'{scheme}://allowed.example/v1/models')
     assert not backend.connected
 
 

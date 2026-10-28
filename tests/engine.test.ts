@@ -122,11 +122,11 @@ test('draft mutation cannot mutate a structured published snapshot',()=>{
   assert.equal(snapshot.pre[0].rules[0].enabled,true);
 });
 
-test('invalid regex and insecure model settings are rejected',()=>{
+test('invalid regex and unsupported model protocols are rejected',()=>{
   const state=initialState();
   const workflow=structuredClone(state.workflows[0]); workflow.pre[0].rules[0].config.pattern='(a+)+';
   assert.ok(validateWorkflow(workflow,state.connections).some(e=>e.includes('정규식')));
-  assert.ok(validateConnection({...state.connections[0],mode:'vllm',baseUrl:'http://internal/v1'}).length>0);
+  assert.ok(validateConnection({...state.connections[0],mode:'vllm',baseUrl:'ftp://internal/v1'}).length>0);
 });
 
 test('connection test requires the configured model to exist',async()=>{
