@@ -84,6 +84,30 @@ python backend/run.py
 
 먼저 `.env`에 관리자 계정을 설정한 뒤 실행합니다.
 
+루트의 실행 도구는 서버별 Compose 수정을 보관하고 `origin/main`을 fast-forward로 갱신한 뒤 이미지를 빌드하고 Aegis를 기동합니다. Docker와 Compose v2, Git이 필요하며 호스트에 Python이나 Node.js를 설치할 필요는 없습니다.
+
+```sh
+./docker.compose.sh --check  # Compose 구성 검사
+./docker.compose.sh          # 서버 설정 보존 후 Git 갱신, 빌드와 기동
+./docker.compose.sh up       # Git 갱신 없이 현재 소스로 빌드와 기동
+./docker.compose.sh restart  # 환경변수 변경 후 컨테이너 재생성
+./docker.compose.sh logs     # 최근 100줄부터 실시간 로그
+./docker.compose.sh menu     # 대화형 메뉴
+```
+
+`build`는 이미지 빌드만, `ps`는 상태 확인, `stop`은 중지, `down`은 데이터 볼륨을 유지하며 컨테이너를 정리합니다. `update`는 main 브랜치에서 스테이징한 변경이 없고 `docker-compose.yml` 외 코드 수정이 없을 때 실행합니다. Compose 변경이 있을 때만 새 stash를 만들고 정확히 그 보관본을 복구하며, 복구용 stash는 남깁니다. pull 실패나 복구 충돌 시 컨테이너를 변경하지 않습니다. 이미지 빌드가 성공한 뒤 교체하고 `/healthz`를 최대 120초 확인합니다. SQLite 마이그레이션은 Aegis 시작 시 자동 적용합니다.
+
+어느 디렉터리에서 실행해도 이 저장소의 Compose 구성과 기존 `.env`를 사용하며 `COMPOSE_PROJECT_NAME`, `COMPOSE_FILE`과 재정의 파일도 Compose 방식대로 적용합니다. 기존 설치의 프로젝트 이름을 유지하세요. 별도 `-p`, `--env-file`, `-f`를 사용했던 설치는 같은 값을 아래처럼 지정합니다. 스크립트는 `.env`를 생성하거나 수정하지 않으며 구성 검사에서 환경변수 값을 출력하지 않습니다.
+
+```sh
+AEGIS_PROJECT=기존프로젝트명 \
+AEGIS_ENV_FILE=.env \
+AEGIS_COMPOSE_FILE=docker-compose.yml \
+./docker.compose.sh
+```
+
+직접 Compose를 실행할 수도 있습니다.
+
 ```sh
 docker compose config --quiet
 docker compose up --build -d
