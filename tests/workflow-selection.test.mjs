@@ -54,7 +54,7 @@ function fixture() {
     requestAnimationFrame(callback) { callback(); },
     notify(message) { notices.push(message); },
   };
-  const setters = {setInspectorTab:'inspectorTab', setInitialPreset: 'initialPreset', setGraphStage: 'graphStage', setPanelMode: 'panelMode', setLibrary: 'library', setInspectorOpen: 'inspectorOpen', setView: 'view', setGraphControlId: 'graphControlId', setGraphEdgeId: 'graphEdgeId', setSelection: 'selection', setSelectedKeys: 'selectedKeys' };
+  const setters = {setPolicyEdgeFocus:'policyEdgeFocus',setInspectorTab:'inspectorTab', setInitialPreset: 'initialPreset', setGraphStage: 'graphStage', setPanelMode: 'panelMode', setLibrary: 'library', setInspectorOpen: 'inspectorOpen', setView: 'view', setGraphControlId: 'graphControlId', setGraphEdgeId: 'graphEdgeId', setSelection: 'selection', setSelectedKeys: 'selectedKeys' };
   for (const [setter, property] of Object.entries(setters)) state[setter] = value => { state[property] = typeof value === 'function' ? value(state[property]) : value; };
   const context = vm.createContext(state);
   vm.runInContext(code, context);

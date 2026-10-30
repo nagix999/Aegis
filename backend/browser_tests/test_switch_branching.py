@@ -136,17 +136,27 @@ def test_add_switch_connect_cases_preserve_whitespace_and_null_after_reopening(p
     expect(page.get_by_label('Switch 필드 경로', exact=True)).to_have_value('/risk/level')
     expect(page.get_by_label('Switch 비교값 1', exact=True)).to_have_value(' ALLOW ')
     expect(page.get_by_label('Switch 비교값 2 자료형', exact=True)).to_have_value('null')
+    # Each exact case is configured on its own card. No canvas-level selector
+    # can silently choose a different output while a shared handle is dragged.
+    page.get_by_label('Switch case-2 연결', exact=True).select_option('fixture-respond')
+    expect(page.get_by_label('Switch case-2 연결', exact=True)).to_have_value('fixture-respond')
+    page.get_by_role('button', name='Switch 비교값 2 경로에 새 노드 추가', exact=True).click()
+    page.get_by_role('button', name='액션 추가하고 연결', exact=False).click()
+    expect(page.get_by_label('정책 다음 액션', exact=True)).to_have_value('error')
+    new_action_id = page.locator('.policy-graph-editor').get_attribute('data-policy-node-id')
+    assert new_action_id and new_action_id != switch_id
+    page.get_by_label('정책 노드 이름', exact=True).fill('널 검사 오류')
+    updated = save_editor(page)
+    case_edge = next(edge for edge in updated['policyRouting']['graph']['edges']
+                     if edge['from'] == switch_id and edge['port'] == 'case-2')
+    assert case_edge['to'] == new_action_id
+    assert next(node for node in updated['policyRouting']['graph']['nodes'] if node['id'] == switch_id)['cases'] == switch['cases']
     close_panel(page)
     page.get_by_role('button', name='전체 보기', exact=True).click()
     outputs = page.locator(f'g[data-from="policy-node:{switch_id}"]')
     expect(outputs).to_have_count(3)
-    choice = page.get_by_label('공백 Switch 출력 경로 선택', exact=True)
-    choice.select_option('case-2')
-    expect(outputs.locator('.wc-branch-label')).to_have_count(1)
-    expect(outputs.locator('.wc-branch-label')).to_have_text('null')
-    choice.select_option('default')
-    expect(outputs.locator('.wc-branch-label')).to_have_count(1)
-    expect(outputs.locator('.wc-branch-label')).to_have_text('기본 경로')
+    expect(page.get_by_label('공백 Switch 출력 경로 선택', exact=True)).to_have_count(0)
+    expect(page.locator(f'[data-policy-connect-port^="{switch_id}:"]')).to_have_count(0)
     for port, value_label in [('case-1', '" ALLOW "'), ('case-2', 'null'), ('default', '기본 경로')]:
         edge = page.locator(f'g[data-from="policy-node:{switch_id}"][data-port="{port}"]')
         description = edge.locator('path.wc-edge > title').text_content()

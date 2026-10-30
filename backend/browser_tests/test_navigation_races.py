@@ -105,7 +105,7 @@ def test_unsaved_workflow_recovery_survives_initial_state_failure_and_retry(page
         expect(recovery.get_by_text(draft_name, exact=True)).to_be_visible()
         recovery.get_by_role("button", name="복구하여 계속", exact=True).click()
         expect(page.locator(".we-top-actions")).to_be_visible()
-        page.get_by_role("button", name="기본 설정", exact=True).click()
+        page.get_by_role("button", name="워크플로우 설정", exact=True).click()
         expect(page.locator(".we-workflow-settings input").first).to_have_value(draft_name)
         current = next(workflow for workflow in context.request.get(state_url).json()["state"]["workflows"] if workflow["id"] == saved["id"])
         assert current["name"] == saved["name"]

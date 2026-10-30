@@ -216,7 +216,7 @@
 @media(max-width:700px){.app-shell .wc-execution-legend{left:12px;bottom:55px;max-width:calc(100% - 24px);gap:7px;padding:6px 8px;font-size:9px}}
 .app-shell .wc-node.zone-missing .wc-selection-ring{display:block;stroke:#b6944a;stroke-dasharray:4 4;opacity:.85}
 .app-shell .wc-node.zone-missing .wc-node-title{color:#8a713d}
-.app-shell .wc-pinned-label{position:absolute;right:0;top:-7px;padding:2px 5px;border:1px solid #d7e2ec;border-radius:3px;background:#f7fafc;color:#6b8195;font-size:9px;line-height:12px;pointer-events:none}
+.app-shell .wc-pinned-label{position:absolute;right:9px;top:-4px;display:grid;place-items:center;width:17px;height:17px;border:1px solid #d7e2ec;border-radius:4px;background:#f7fafc;color:#6b8195;pointer-events:none}
 .app-shell .wc-node[data-kind="policy"]{--node-fill:#a6bed6;--node-glyph:#354e69}
 .app-shell .wc-node[data-kind="policy"] .wc-kind-icon{border:0;border-radius:0;clip-path:polygon(25% 0,75% 0,100% 50%,75% 100%,25% 100%,0 50%)}
 .app-shell .wc-node[data-kind="policy-condition"]{--node-fill:#c6b8db;--node-glyph:#5e4c75}
@@ -227,6 +227,9 @@
 
 .app-shell .wc-inspect-status{right:auto;cursor:pointer;padding:0;touch-action:manipulation;z-index:5}
 .app-shell .wc-inspect-status:focus-visible{outline:2px solid #7396bb;outline-offset:3px}
+.app-shell .wc-edge-selection{fill:none;stroke:#8a65c7;stroke-width:8px;stroke-opacity:.36;vector-effect:non-scaling-stroke;pointer-events:none}
+.app-shell .wc-connection.policy.selected>.wc-edge{stroke-width:2.5}
+.app-shell .wc-connection.policy.selected>.wc-edge-hit:focus-visible{outline:none;stroke:#8a65c7;stroke-opacity:.18}
 .app-shell .wc-node-title{font-weight:600;color:#283e55}
 .app-shell .wc-toolbar .wc-view-controls{row-gap:4px}
 .app-shell .wc-graph-port.policy-port{z-index:4}
@@ -245,8 +248,6 @@
 
 .app-shell .wc-node[data-kind="policy-switch"]{--node-fill:#bdd3df;--node-glyph:#45687b}
 .app-shell .wc-node[data-kind="policy-switch"] .wc-kind-icon{border:0;border-radius:0;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}
-.app-shell .wc-switch-port-choice{position:absolute;z-index:5;width:136px;height:25px;padding:3px 5px;border:1px solid #ccd9e5;border-radius:4px;background:#fff;color:#46647c;font-size:10px;line-height:17px;text-overflow:ellipsis;pointer-events:auto}
-.app-shell .wc-switch-port-choice:focus-visible{outline:2px solid #608bac;outline-offset:2px}
 .app-shell .policy-switch-case>strong{font-size:12px;color:#50647a}
 .app-shell .policy-switch-value{display:grid;gap:8px}
 .app-shell .policy-switch-value small{color:#78879a;font-size:11px;line-height:1.5}

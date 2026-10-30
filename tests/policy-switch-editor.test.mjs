@@ -71,10 +71,7 @@ test('the Switch editor prevents cycles while direct scalar case edits remain im
  const graph=plan();graph.nodes.push({id:'back',name:'다시 분기',kind:'branch',condition:{mode:'all',predicates:[{path:'/risk/level',operator:'exists'}]}});graph.edges.push({id:'back-edge',from:'back',to:'switch',port:'true'});const before=structuredClone(graph),f=fixture({graph});f.settle();label(f.tree,'Switch low 연결').props.onChange({target:{value:'back'}});assert.equal(f.changes.length,0);assert.match(content(f.render()),/순환 연결/);const scalar=walk(f.tree,node=>typeof node.type==='function'&&node.type.name==='SwitchValueInput')[0];scalar.props.onChange(false);assert.equal(f.changes.at(-1).nodes[0].cases[0].value,false);assert.deepEqual(graph,before);
 });
 
-test('canvas output controls and label filtering share a stable selection with deleted-case fallback',async()=>{
- const source=await readFile(new URL('../components/workflow-canvas.tsx',import.meta.url),'utf8'),tree=ts.createSourceFile('workflow-canvas.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX),canvas=tree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='WorkflowCanvas'),helper=canvas.body.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='selectedSwitchPort');assert.ok(helper);
- const code=ts.transpileModule(helper.getText(tree)+'\nglobalThis.select=selectedSwitchPort;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText,context=vm.createContext({policyNodePorts:graphHelpers.policyNodePorts,switchPorts:{switch:'high'}});vm.runInContext(code,context);const node=plan().nodes[0];assert.equal(context.select(node),'high');node.cases=node.cases.filter(item=>item.id!=='high');assert.equal(context.select(node),'low');context.switchPorts.switch='default';assert.equal(context.select(node),'default');node.cases=[];context.switchPorts.switch='low';assert.equal(context.select(node),'default');
-});
+
 
 const finiteSchema={type:'object',required:['risk'],properties:{risk:{type:'object',required:['level'],properties:{level:{type:'string',enum:[' LOW ','HIGH']}}}}};
 const pickerOf=tree=>walk(tree,node=>typeof node.type==='function'&&node.props.label==='Switch 필드 경로')[0];

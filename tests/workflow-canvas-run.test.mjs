@@ -173,19 +173,27 @@ test('policy models and graph nodes render on the main canvas with their own set
   const readonly=render.canvas({...f.props,readOnly:true,onPolicyConnect:noop,onSelectPolicyEdge:noop});
   assert.equal(nodes(readonly).policy['data-kind'],'policy');assert.doesNotMatch(readonly,/data-policy-connect-port=/);assert.doesNotMatch(readonly,/data-connect-port=/);
 });
-test('Switch cards keep a compact output selector with exact scalar case labels and a default route',()=>{
+test('Switch cards expose no ambiguous output controls while exact case links stay selectable',()=>{
   const f=withPolicy(fixture()),graph=f.workflow.policyRouting.graph;
   graph.nodes[0]={id:'branch',name:'위험 경로',kind:'switch',path:'/risk/level',cases:[{id:'value-string',value:' LOW '},{id:'value-number',value:1},{id:'value-boolean',value:false},{id:'value-null',value:null}]};
   graph.edges=[{id:'string-out',from:'branch',to:'main-action',port:'value-string'},{id:'number-out',from:'branch',to:'reply-action',port:'value-number'},{id:'boolean-out',from:'branch',to:'error-action',port:'value-boolean'},{id:'null-out',from:'branch',to:'reply-action',port:'value-null'},{id:'default-out',from:'branch',to:'error-action',port:'default'}];
   const before=structuredClone(f.workflow),html=render.canvas({...f.props,onPolicyConnect:noop}),cards=nodes(html);
   assert.equal(cards['policy-node:branch']['data-kind'],'policy-switch');assert.match(cards['policy-node:branch']['aria-label'],/Switch 분기 설정.*\/risk\/level/);
-  assert.equal([...html.matchAll(/data-policy-connect-port="branch:/g)].length,1);assert.match(html,/aria-label="위험 경로 출력 경로 선택"/);
-  for(const port of ['value-string','value-number','value-boolean','value-null','default'])assert.ok(html.includes(`<option value="${port}"`));
-  assert.match(html,/&quot; LOW &quot;/);assert.match(html,/>false<\/option>/);assert.match(html,/>null<\/option>/);assert.match(html,/default/);
+  assert.doesNotMatch(html,/data-policy-connect-port="branch:|wc-switch-port-choice|위험 경로 출력 경로 선택/);
+  assert.match(html,/data-policy-connect-target="branch"/);
+  assert.match(html,/&quot; LOW &quot;/);assert.match(html,/false 경로/);assert.match(html,/null 경로/);assert.match(html,/기본 경로/);
   for(const id of ['string-out','number-out','boolean-out','null-out','default-out'])assert.ok(html.includes(`data-policy-edge-id="${id}"`));
   const routeBlocks=value=>[...value.matchAll(/<g\b[^>]*data-policy-edge-id="([^"]+)"[^>]*>([\s\S]*?)<\/g>/g)].map(match=>({id:match[1],body:match[2]}));
   const visibleLabels=value=>routeBlocks(value).flatMap(block=>[...block.body.matchAll(/<text\b[^>]*class="wc-branch-label[^>]*>([\s\S]*?)<\/text>/g)].map(match=>({id:block.id,label:match[1]})));
-  assert.deepEqual(visibleLabels(html),[{id:'string-out',label:'&quot; LOW &quot;'}],'Only the route selected in the compact selector has a visible edge label.');
+  assert.deepEqual(visibleLabels(html),[],'No Switch case is preferred before an edge is selected.');
+  const selected=render.canvas({...f.props,onPolicyConnect:noop,selectedPolicyEdgeId:'null-out'});
+  assert.deepEqual(visibleLabels(selected),[{id:'null-out',label:'null'}]);
+  const selectedBlocks=routeBlocks(selected);
+  for(const block of selectedBlocks){const tag=selected.match(new RegExp('<g\\b[^>]*data-policy-edge-id="'+block.id+'"[^>]*>'))?.[0];assert.equal(/class="[^"]*\bselected\b/.test(tag??''),block.id==='null-out');assert.match(block.body,new RegExp('aria-pressed="'+(block.id==='null-out')+'"'));assert.equal(block.body.includes('wc-edge-selection'),block.id==='null-out');}
+  const defaultSelected=render.canvas({...f.props,selectedPolicyEdgeId:'default-out'});assert.deepEqual(visibleLabels(defaultSelected),[{id:'default-out',label:'기본 경로'}]);
+  const executed=result(f.workflow);executed.policyRoute='main';executed.policyPath=['branch','main-action'];
+  const inspected=render.canvas({...f.props,execution:executed,selectedPolicyEdgeId:'null-out'}),selectedGroup=attributes(inspected.match(/<g\b[^>]*data-policy-edge-id="null-out"[^>]*>/)[0]),executedGroup=attributes(inspected.match(/<g\b[^>]*data-policy-edge-id="string-out"[^>]*>/)[0]);
+  assert.match(selectedGroup.class,/\bselected\b/);assert.equal(selectedGroup['data-execution-state'],'skipped');assert.equal(executedGroup['data-execution-state'],'completed');assert.doesNotMatch(executedGroup.class,/\bselected\b/);
   for(const [id,label]of [['string-out','&quot; LOW &quot;'],['number-out','1'],['boolean-out','false'],['null-out','null'],['default-out','기본 경로']]){
     const block=routeBlocks(html).find(block=>block.id===id);assert.ok(block,id);
     assert.ok(block.body.match(/<title>([\s\S]*?)<\/title>/)?.[1].includes(` ${label} 경로`),`${id} retains its exact title: ${block.body.match(/<title>([\s\S]*?)<\/title>/)?.[1]}`);
@@ -193,9 +201,13 @@ test('Switch cards keep a compact output selector with exact scalar case labels 
   }
   assert.deepEqual(f.workflow,before);
   const readonly=render.canvas({...f.props,readOnly:true,onPolicyConnect:noop});assert.doesNotMatch(readonly,/wc-switch-port-choice|data-policy-connect-port=/);assert.equal(nodes(readonly)['policy-node:branch']['data-kind'],'policy-switch');
-  assert.deepEqual(visibleLabels(readonly),[],'Without an output selector no arbitrary Switch route is visually preferred.');
+  assert.deepEqual(visibleLabels(readonly),[],'Readonly Switch edges do not arbitrarily prefer any case.');
   for(const route of routeBlocks(readonly)){assert.match(route.body,/<title>[^<]+ 경로<\/title>/);assert.match(route.body,/aria-label="[^"]+ 경로 연결 설정"/);}
   const ordinary=render.canvas({...withPolicy(fixture()).props,onPolicyConnect:noop});assert.match(ordinary,/<text class="wc-branch-label true"[^>]*>참<\/text>/);assert.match(ordinary,/<text class="wc-branch-label false"[^>]*>거짓<\/text>/);
+});
+test('pinned nodes retain an accessible icon without an extra text label beside the card',()=>{
+  const f=fixture();f.workflow.layout={version:1,positions:{},pinnedKeys:['main']};const html=render.canvas(f.props);
+  assert.equal(nodes(html).main['data-pinned'],'true');assert.match(html,/<span class="wc-pinned-label" role="img" aria-label="자동 정렬 위치 고정" title="자동 정렬 위치 고정"><svg/);assert.doesNotMatch(html,/>위치 고정<\/span>/);
 });
 test('legacy branch and rule cards share condition labels and accept incoming connections without changing saved kinds',()=>{
   const f=withPolicy(fixture()),original=structuredClone(f.workflow),html=render.canvas({...f.props,onPolicyConnect:noop}),cards=nodes(html);

@@ -63,7 +63,7 @@ def console_write(page: Page, name: str) -> dict:
 
 def edit_workflow_name(page: Page, name: str) -> Any:
     page.locator(".wf-list-name").first.click()
-    page.get_by_role("button", name="기본 설정", exact=True).click()
+    page.get_by_role("button", name="워크플로우 설정", exact=True).click()
     field = page.locator(".we-workflow-settings input").first
     field.fill(name)
     page.wait_for_function(
