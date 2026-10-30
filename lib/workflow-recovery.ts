@@ -82,11 +82,11 @@ function switchValue(value:unknown):boolean {
 }
 function policyGraph(value: unknown): boolean {
   return shape(value,['version','entryNodeId','nodes','edges']) && value.version === 1 && (value.entryNodeId === '' || identifier(value.entryNodeId))
-    && array(value.nodes,24,node => shape(node,['id','name','kind','condition','path','cases','action','responseText','errorCode','errorMessage']) && identifier(node.id) && string(node.name,100)
+    && array(value.nodes,24,node => shape(node,['id','name','kind','condition','path','cases','action','responseText','responseMode','errorCode','errorMessage']) && identifier(node.id) && string(node.name,100)
       && (member(node.kind,['branch','rule']) ? shape(node.condition,['mode','predicates']) && member(node.condition.mode,['all','any'])
         && array(node.condition.predicates,12,p=>shape(p,['path','operator','value']) && string(p.path,512) && member(p.operator,['eq','ne','gt','gte','lt','lte','contains','in','exists']) && optional(p.value,jsonValue))
         : node.kind === 'switch' ? string(node.path,512) && array(node.cases,12,item=>shape(item,['id','value'])&&identifier(item.id)&&Object.prototype.hasOwnProperty.call(item,'value')&&switchValue(item.value))
-        : node.kind === 'action' && member(node.action,['main','respond','error']) && optional(node.responseText,v=>string(v,4000)) && optional(node.errorCode,v=>string(v,64)) && optional(node.errorMessage,v=>string(v,500))))
+        : node.kind === 'action' && member(node.action,['main','respond','error']) && optional(node.responseText,v=>string(v,4000)) && optional(node.responseMode,v=>node.action==='respond'&&member(v,['immediate','post'])) && optional(node.errorCode,v=>string(v,64)) && optional(node.errorMessage,v=>string(v,500))))
     && array(value.edges,48,e=>shape(e,['id','from','to','port']) && identifier(e.id) && string(e.from,120) && string(e.to,120) && identifier(e.port));
 }
 function policyRouting(value: unknown): boolean {
@@ -103,8 +103,8 @@ function policyRouting(value: unknown): boolean {
     && shape(connection, ['id', 'name', 'baseUrl', 'model', 'role', 'mode', 'secretEnv', 'timeoutMs']) && identifier(connection.id)
     && string(connection.name, 100) && string(connection.baseUrl, 2000) && string(connection.model, 200)
     && member(connection.role, ['main', 'guard', 'both']) && member(connection.mode, ['demo', 'vllm']) && string(connection.secretEnv, 80) && number(connection.timeoutMs, 1000, 60000)
-    && array(value.routes, 12, route => shape(route, ['decision', 'action', 'responseText', 'errorCode', 'errorMessage']) && string(route.decision, 64)
-      && member(route.action, ['main', 'respond', 'error']) && optional(route.responseText, item => string(item, 4000))
+    && array(value.routes, 12, route => shape(route, ['decision', 'action', 'responseText', 'responseMode', 'errorCode', 'errorMessage']) && string(route.decision, 64)
+      && member(route.action, ['main', 'respond', 'error']) && optional(route.responseText, item => string(item, 4000)) && optional(route.responseMode,item=>route.action==='respond'&&member(item,['immediate','post']))
       && optional(route.errorCode, item => string(item, 64)) && optional(route.errorMessage, item => string(item, 500)));
 }
 

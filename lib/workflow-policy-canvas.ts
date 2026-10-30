@@ -41,17 +41,17 @@ export function getWorkflowCanvasLinks(workflow:Workflow):WorkflowCanvasLink[]{
     const routing=scope.routing,legacy=scope.id==='policy',model=legacy?'policy':`rule:${scope.id}`,prefix=legacy?'policy':`policy:${scope.id}`;
     const child=(id:string)=>`policy-node:${policyScopedId(scope.id,id)}`;
     const successors=legacy?[{id:'main',key:'main'}]:(getStageGraph(workflow,scope.stage).edges??[]).filter(edge=>edge.from===`group:${scope.group?.id}`).flatMap(edge=>{const key=endpoint(workflow,scope.stage,edge.to);return key?[{id:edge.id,key,edge}]:[];});
-    const actionLinks=(from:string,action:string,linkPrefix:string,label?:string)=>{
-      const targets:{id:string;key:string;edge?:FlowEdge}[]=action==='main'?successors:action==='error'?[{id:'output',key:'output'}]:action==='respond'&&legacy?after:[];
+    const actionLinks=(from:string,action:string,linkPrefix:string,label?:string,responseMode?:'immediate'|'post')=>{
+      const targets:{id:string;key:string;edge?:FlowEdge}[]=action==='main'?successors:action==='error'?[{id:'output',key:'output'}]:action==='respond'&&legacy?responseMode==='immediate'?[{id:'output',key:'output'}]:after:[];
       for(const target of targets){const edge=target.edge;links.push({id:`${linkPrefix}:${target.id}`,from,to:target.key,stage:scope.stage,port:'next',policyOwnerId:scope.id,...(edge?{graphId:edge.id,graphFrom:edge.from,graphTo:edge.to}:{}),...(label?{label}:{})});}
     };
-    if(routing.policy?.formatVersion!==2){for(const[index,route]of(routing.routes??[]).entries())if(route)actionLinks(model,route.action,`${prefix}:route:${index}`,route.decision);continue;}
+    if(routing.policy?.formatVersion!==2){for(const[index,route]of(routing.routes??[]).entries())if(route)actionLinks(model,route.action,`${prefix}:route:${index}`,route.decision,route.responseMode);continue;}
     const entry=child(routing.graph?.entryNodeId??'');if(known.has(entry))links.push({id:`${prefix}:entry`,from:model,to:entry,stage:scope.stage,port:'next',policyOwnerId:scope.id});
     for(const edge of(routing.graph?.edges??[]).slice(0,48)){
       if(!edge||typeof edge.from!=='string'||typeof edge.to!=='string')continue;const from=child(edge.from),to=child(edge.to);if(!known.has(from)||!known.has(to)||from===to)continue;
       const source=routing.graph?.nodes.find(node=>node.id===edge.from);
       links.push({id:`${prefix}:edge:${edge.id}`,from,to,stage:scope.stage,policyEdgeId:policyScopedId(scope.id,edge.id),policyOwnerId:scope.id,port:edge.port,label:source?policyNodePorts(source).find(item=>item.port===edge.port)?.label:undefined});
     }
-    for(const node of(routing.graph?.nodes??[]).slice(0,24))if(node?.kind==='action'&&known.has(child(node.id)))actionLinks(child(node.id),node.action,`${prefix}:action:${node.id}`);
+    for(const node of(routing.graph?.nodes??[]).slice(0,24))if(node?.kind==='action'&&known.has(child(node.id)))actionLinks(child(node.id),node.action,`${prefix}:action:${node.id}`,undefined,node.responseMode);
   }return links;
 }

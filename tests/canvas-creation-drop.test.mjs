@@ -9,11 +9,14 @@ import {nodeDefinitions,resolveLayout,layoutBounds,nodePort,NODE_WIDTH,NODE_HEIG
 import {getStageGraph} from '../lib/workflow-graph.ts';
 import {previewConnection} from '../lib/workflow-connections.ts';
 import {policyNodePorts} from '../lib/policy-graph.ts';
+import {routeWorkflowEdge} from '../lib/workflow-edge-routing.ts';
+import {canvasPortPoint,canvasPortHitArea,facingPortSides} from '../lib/workflow-port-geometry.ts';
+import {getWorkflowCanvasLinks} from '../lib/workflow-policy-canvas.ts';
 
 const source=await readFile(new URL('../components/workflow-canvas.tsx',import.meta.url),'utf8');
 const tree=ts.createSourceFile('canvas.tsx',source,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
 const component=tree.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text==='WorkflowCanvas');
-const names=['setPendingLink','emptyTarget','dropSurface','emptyDropPoint','worldPoint','validSource','checkConnection','targetEndpoint','targetCheck','wireTarget','finishWire','cancelWire'];
+const names=['setPendingLink','emptyTarget','dropSurface','emptyDropPoint','worldPoint','validSource','checkConnection','targetEndpoint','targetCheck','wireTarget','finishWire','cancelWire','endpointKey','connectionKey','anchorPoint','portShape','portSides','edgeSides'];
 const chunks=names.map(name=>{const node=component.body.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===name);assert.ok(node,name);return node.getText(tree);});
 const code=ts.transpileModule(chunks.join('\n')+`\nglobalThis.actions={${names.join(',')}};`,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
 class Surface {constructor(interactive=false){this.interactive=interactive;}closest(){return this.interactive?this:null;}}
@@ -24,7 +27,7 @@ function fixture(){
  const empty=new Surface(),interactive=new Surface(true),outside=new Surface();let surface=empty;
  const element={clientWidth:1400,clientHeight:700,clientLeft:0,clientTop:0,scrollLeft:0,scrollTop:0,getBoundingClientRect(){return{left:50,top:100,right:1450,bottom:800};},contains(target){return target!==outside;}};
  const created=[],connected=[],notices=[],chosen=[];const sourcePort={stage:'pre',endpoint:'start',port:'next'};
- const values={...policyChecks,workflow,nodes,visible,bounds,stageGraphs,nodePort,NODE_WIDTH,NODE_HEIGHT,NODE_ICON_CENTER_Y,previewConnection,Element:Surface,Math,Boolean,
+ const values={...policyChecks,workflow,nodes,visible,bounds,stageGraphs,nodePort,NODE_WIDTH,NODE_HEIGHT,NODE_ICON_CENTER_Y,canvasPortPoint,canvasPortHitArea,facingPortSides,policyChecks:policyChecks.listWorkflowPolicyChecks(workflow),edges:getWorkflowCanvasLinks(workflow).map(edge=>({...edge,kind:'flow'})),previewConnection,Element:Surface,Math,Boolean,
   zoom:1,canConnect:true,readOnly:false,connectionPreviews:new Map(),viewport:{current:element},wire:{current:undefined},wirePreview:undefined,linkSourceRef:{current:undefined},linkSource:undefined,suppressWireClick:{current:false},suppressClick:{current:false},suppressBackgroundClick:{current:false},graphSignature:JSON.stringify(stageGraphs),document:{elementFromPoint(){return surface;}},
   setWirePreview(value){values.wirePreview=value;},setLinkSource(value){values.linkSource=value;},setAnnouncement(message){notices.push(message);},notify(message){notices.push(message);},onCreateFromPort(value){created.push(value);},chooseTarget(stage,target){chosen.push({stage,target});},onConnect(...args){connected.push(args);},canvasEndpointLabel(_stage,endpoint){return endpoint;}};
  const context=vm.createContext(values);vm.runInContext(code,context);
@@ -65,25 +68,19 @@ test('auto-fit uses final bounds once, consumes its request and ignores supersed
 });
 
 test('folded row connections return through an empty band between rows',()=>{
- const names=['rect','route'];const declarations=names.map(name=>component.body.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===name).getText(tree));
- const code=ts.transpileModule(declarations.join('\n')+';globalThis.routeEdge=route;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
- const visible={a:{x:800,y:0},b:{x:0,y:220}},nodes=Object.keys(visible).map(key=>({key}));
- const values={...policyChecks,visible,nodes,nodePort,NODE_WIDTH,NODE_HEIGHT,Math,bounds:{offsetY:0},flowBounds:{height:400,offsetY:0}};
- const context=vm.createContext(values);vm.runInContext(code,context);const routed=context.routeEdge({from:'a',to:'b',kind:'flow'});
- const rail=routed.points[2].y;assert.ok(rail>NODE_HEIGHT&&rail<visible.b.y);assert.equal(routed.points[3].y,rail);assert.equal(routed.points.at(-1).y,nodePort(visible.b,'left').y);assert.ok(routed.d.endsWith(`H ${nodePort(visible.b,'left').x-8}`));
+ const visible={a:{x:800,y:0},b:{x:0,y:220}},obstacles=Object.entries(visible).map(([key,point])=>({key,...point,width:NODE_WIDTH,height:NODE_HEIGHT}));
+ const target=nodePort(visible.b,'left');
+ const routed=routeWorkflowEdge({start:nodePort(visible.a,'right'),end:{...target,x:target.x-8},sourceKey:'a',targetKey:'b',obstacles,minY:-72});
+ const rail=routed.points[2].y;assert.ok(rail>NODE_HEIGHT&&rail<visible.b.y);assert.equal(routed.points[3].y,rail);assert.equal(routed.points.at(-1).y,target.y);assert.equal(routed.tx,target.x-8);
 });
 
 test('parallel Switch cases have separate mouse lanes without crossing middle cards',()=>{
- const names=['rect','route'];const declarations=names.map(name=>component.body.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===name).getText(tree));
- const code=ts.transpileModule(declarations.join('\n')+';globalThis.routeEdge=route;',{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
  for(const size of [3,13])for(const blocked of [false,true]){
-  const visible={'policy-node:switch':{x:0,y:0},'policy-node:action':{x:600,y:0},...(blocked?{blocker:{x:300,y:0}}:{})},nodes=Object.keys(visible).map(key=>({key}));
-  const edges=Array.from({length:size},(_,index)=>({id:`policy:edge:edge-${index}`,policyEdgeId:`edge-${index}`,from:'policy-node:switch',to:'policy-node:action',kind:'policy',port:index===size-1?'default':`case-${index}`}));
-  const workflow={policyRouting:{graph:{nodes:[{id:'switch',kind:'switch'}]}}};
-  const values={...policyChecks,visible,nodes,workflow,edges,nodePort,NODE_WIDTH,NODE_HEIGHT,Math,bounds:{offsetY:72},flowBounds:{height:1000,offsetY:72},policyPoint(key,side){return nodePort(visible[key],side);}};
-  const context=vm.createContext(values);vm.runInContext(code,context);const routed=edges.map(edge=>context.routeEdge(edge));
+  const visible={'policy-node:switch':{x:0,y:0},'policy-node:action':{x:600,y:0},...(blocked?{blocker:{x:300,y:0}}:{})},obstacles=Object.entries(visible).map(([key,point])=>({key,...point,width:NODE_WIDTH,height:NODE_HEIGHT}));
+  const target=nodePort(visible['policy-node:action'],'left');
+  const routed=Array.from({length:size},(_,index)=>routeWorkflowEdge({start:nodePort(visible['policy-node:switch'],'right'),end:{...target,x:target.x-8},sourceKey:'policy-node:switch',targetKey:'policy-node:action',obstacles,parallelIndex:index,parallelCount:size,minY:-72}));
   assert.equal(new Set(routed.map(edge=>edge.d)).size,size);
-  const rails=routed.map(edge=>edge.points[2].y);
+  const rails=routed.map(edge=>edge.points.length===2?edge.sy:edge.points[2].y);
   for(let index=1;index<size;index++)assert.ok(rails[index]-rails[index-1]>=40,'Individual case hit areas remain separate.');
   if(blocked)assert.ok(rails.every(rail=>rail>NODE_HEIGHT+8),'The case lanes avoid the card between source and target.');
   for(const edge of routed){assert.equal(edge.sx,routed[0].sx);assert.equal(edge.sy,routed[0].sy);assert.equal(edge.tx,routed[0].tx);assert.equal(edge.ty,routed[0].ty);}
@@ -92,13 +89,13 @@ test('parallel Switch cases have separate mouse lanes without crossing middle ca
 });
 
 test('idle policy input ports let edges receive clicks and activate only after choosing a source',()=>{
- const names=['renderPolicyPorts','validPolicySource','pickPolicySource','connectPolicyNode','cancelPolicyWire','startPolicyWire','movePolicyWire','finishPolicyWire'];
+ const names=['renderPolicyPorts','validPolicySource','pickPolicySource','connectPolicyNode','cancelPolicyWire','startPolicyWire','movePolicyWire','finishPolicyWire','portButtonGeometry','policyInputSides','portSides','edgeSides','anchorPoint','portShape'];
  const declarations=names.map(name=>component.body.statements.find(node=>ts.isFunctionDeclaration(node)&&node.name?.text===name).getText(tree));
  const code=ts.transpileModule(declarations.join('\n')+`;globalThis.actions={${names.join(',')}};`,{compilerOptions:{target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.React}}).outputText;
  const definitions=[{id:'branch',kind:'branch',name:'조건',condition:{mode:'all',predicates:[]}},{id:'action',kind:'action',name:'응답',action:'main'}];
  const workflow={policyRouting:{graph:{nodes:definitions}}},nodes=definitions.map(node=>({id:node.id,key:`policy-node:${node.id}`,kind:'policy-node'}));
  const visible={'policy-node:branch':{x:0,y:0},'policy-node:action':{x:240,y:0}},connected=[];
- const values={...policyChecks,workflow,nodes,visible,zoom:.22,canPolicyConnect:true,canConnect:false,policyNodePorts,NODE_WIDTH,NODE_HEIGHT,Math,
+ const values={...policyChecks,workflow,nodes,visible,zoom:.22,canPolicyConnect:true,canConnect:false,policyNodePorts,NODE_WIDTH,NODE_HEIGHT,Math,edges:[],canvasPortPoint,canvasPortHitArea,facingPortSides,
   React:{createElement(type,props,...children){return{type,props,children};}},policySource:undefined,policySourceRef:{current:undefined},policyWire:{current:undefined},suppressPolicyClick:{current:false},
   policyPoint(key,side){return nodePort(visible[key],side);},worldPoint(x,y){return{x,y};},setPolicySource(value){values.policySource=value;},setPolicyWirePoint(){},cancelWire(){},setPendingLink(){},setAnnouncement(){},canvasNodeName(){return'조건';},onPolicyConnect(...args){connected.push(args);},onCreatePolicyFromPort:undefined};
  const context=vm.createContext(values);vm.runInContext(code,context);

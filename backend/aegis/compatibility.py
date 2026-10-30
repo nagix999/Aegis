@@ -248,8 +248,9 @@ def _zone_graph(workflow: dict) -> tuple[list[str], dict[str, list[str]], dict[s
         def post_endpoint(key):
             return "output" if key == "end" else aliases.get(key)
         post_targets = [post_endpoint(edge["to"]) for edge in get_stage_graph(workflow, "post").get("edges", []) if edge["from"] == "start"]
-        def action_targets(action):
-            return ["main"] if action == "main" else post_targets if action == "respond" else ["output"]
+        def action_targets(route):
+            action = route["action"]
+            return ["main"] if action == "main" else post_targets if action == "respond" and route.get("responseMode", "post") == "post" else ["output"]
         if routing["policy"].get("formatVersion", 1) == 2:
             graph = routing.get("graph", {})
             connect("policy", f"policy-node:{graph.get('entryNodeId', '')}")
@@ -257,11 +258,11 @@ def _zone_graph(workflow: dict) -> tuple[list[str], dict[str, list[str]], dict[s
                 connect(f"policy-node:{edge['from']}", f"policy-node:{edge['to']}")
             for node in graph.get("nodes", []):
                 if node["kind"] == "action":
-                    for target in action_targets(node["action"]):
+                    for target in action_targets(node):
                         connect(f"policy-node:{node['id']}", target)
         else:
             for route in routing.get("routes", []):
-                for target in action_targets(route["action"]):
+                for target in action_targets(route):
                     connect("policy", target)
     return keys, outgoing, incoming, aliases
 

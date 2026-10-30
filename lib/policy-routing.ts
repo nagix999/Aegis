@@ -65,7 +65,7 @@ export function bindPolicyRevision(policy: PolicyRevision, previousRoutes: Polic
 
 export function changePolicyRouteAction(route: PolicyRoute, action: PolicyRoute['action']): PolicyRoute {
   if (action === 'main') return { decision: route.decision, action };
-  if (action === 'respond') return { decision: route.decision, action, responseText: route.responseText ?? '' };
+  if (action === 'respond') return { decision: route.decision, action, responseText: route.responseText ?? '',...(route.responseMode?{responseMode:route.responseMode}:{}) };
   return { decision: route.decision, action, errorCode: route.errorCode ?? route.decision, errorMessage: route.errorMessage ?? '정책에 따라 요청이 제한되었습니다.' };
 }
 
@@ -84,6 +84,7 @@ export function policyRoutingErrors(routing: PolicyRouting): string[] {
   if (routing.routes.length !== decisions.size || new Set(routing.routes.map(item => item.decision)).size !== decisions.size || routing.routes.some(item => !decisions.has(item.decision))) errors.push('모든 판정에 실행 경로를 하나씩 지정하세요.');
   for (const route of routing.routes) {
     if (!['main', 'respond', 'error'].includes(route.action)) errors.push('판정별 실행 경로를 선택하세요.');
+    if (route.responseMode!==undefined&&(route.action!=='respond'||!['immediate','post'].includes(route.responseMode)))errors.push('응답 반환 방식은 등록 안내 응답에서 즉시 출력 또는 POST 검사 후 반환으로 선택하세요.');
     if (route.action === 'respond' && (typeof route.responseText !== 'string' || !route.responseText.trim() || route.responseText.length > 4000)) errors.push('등록 안내 응답은 1~4,000자로 입력하세요.');
     if (route.action === 'error' && (typeof route.errorCode !== 'string' || !codePattern.test(route.errorCode))) errors.push('공개 오류 코드를 대문자 영문, 숫자, 밑줄로 최대 64자 입력하세요.');
     if (route.action === 'error' && (typeof route.errorMessage !== 'string' || !route.errorMessage.trim() || route.errorMessage.length > 500)) errors.push('공개 오류 메시지는 1~500자로 입력하세요.');
@@ -95,8 +96,8 @@ export function policyRoutingErrors(routing: PolicyRouting): string[] {
 export function policyExecutionConfiguration(routing: PolicyRouting) {
   const { id: _id, name: _name, description: _description, version: _version, updatedAt: _updatedAt, connectionSnapshot, ...policy } = routing.policy;
   const { name: _connectionName, ...connection } = connectionSnapshot;
-  return { policy: { ...policy, connectionSnapshot: connection }, ...(routing.graph ? {graph:{...routing.graph,nodes:routing.graph.nodes.map(({name:_name,...node})=>node)}} : {}), routes: routing.routes.map(route => ({ decision: route.decision, action: route.action,
-    ...(route.action === 'respond' ? { responseText: route.responseText } : {}),
+  return { policy: { ...policy, connectionSnapshot: connection }, ...(routing.graph ? {graph:{...routing.graph,nodes:routing.graph.nodes.map(({name:_name,...node})=>node.kind==='action'&&node.action==='respond'?{...node,responseMode:node.responseMode??'post'}:node)}} : {}), routes: routing.routes.map(route => ({ decision: route.decision, action: route.action,
+    ...(route.action === 'respond' ? { responseText: route.responseText,responseMode:route.responseMode??'post' } : {}),
     ...(route.action === 'error' ? { errorCode: route.errorCode, errorMessage: route.errorMessage } : {}),
   })) };
 }

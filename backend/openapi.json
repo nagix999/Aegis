@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegis Gateway API",
     "description": "요청 검사와 응답 검사, 워크플로우 검증 및 OpenAI 형식 Gateway",
-    "version": "3.8.0"
+    "version": "3.9.0"
   },
   "paths": {
     "/api/auth/session": {
@@ -953,6 +953,22 @@
             "default": null,
             "title": "Responsetext"
           },
+          "responseMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "immediate",
+                  "post"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Responsemode"
+          },
           "errorCode": {
             "anyOf": [
               {
@@ -1394,6 +1410,22 @@
             ],
             "default": null,
             "title": "Responsetext"
+          },
+          "responseMode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "immediate",
+                  "post"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Responsemode"
           },
           "errorCode": {
             "anyOf": [

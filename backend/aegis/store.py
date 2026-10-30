@@ -467,6 +467,8 @@ class Store:
                 safe[key] = log[key]
         if log.get("policyRoute") in {"main", "respond", "error"}:
             safe["policyRoute"] = log["policyRoute"]
+        if log.get("policyResponseMode") in {"immediate", "post"}:
+            safe["policyResponseMode"] = log["policyResponseMode"]
         if isinstance(log.get("policyPath"), list) and len(log["policyPath"]) <= 24 and all(isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", identifier) for identifier in log["policyPath"]):
             safe["policyPath"] = list(log["policyPath"])
         if isinstance(log.get("policyChecks"), list):

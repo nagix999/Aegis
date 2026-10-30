@@ -20,7 +20,7 @@ def test_openapi_has_unique_actions_valid_model_refs_bodies_and_auth():
         assert 'policyRouting' in schema['components']['schemas']['RuleConfig']['properties']
         assert 'policy' in schema['components']['schemas']['Rule']['properties']['kind']['enum']
         assert 'expectedPolicyNodeId' in schema['components']['schemas']['DatasetRow']['properties']
-        assert schema['info']['version']=='3.8.0'
+        assert schema['info']['version']=='3.9.0'
         switch = schema['components']['schemas']['PolicySwitchNode']
         assert switch['properties']['kind']['const'] == 'switch'
         assert {'id', 'name', 'kind', 'path', 'cases'} <= set(switch['required'])

@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { AlignLeft, Boxes, BrainCircuit, Braces, Check, CheckSquare, FileJson, GitBranch, Layers3, LayoutGrid, ListChecks, LogIn, LogOut, Maximize2, Merge, Minus, Pin, Plus, RefreshCw, Regex, Search, Settings2, ShieldCheck, Split, SquareDashed, X, Zap } from 'lucide-react';
 import type { CanvasZone, Connection, ConsoleExecutionInspection, ExecutionResult, Workflow, WorkflowProgressEvent } from '@/lib/aegis-types';
-import { autoLayout, createZoneForNodes, executionEndpointKey, layoutBounds, moveNodes, moveZoneLayout, nodeDefinitions, resolveLayout, visibleLayoutKey, zoneFrames, NODE_HEIGHT, NODE_WIDTH, NODE_ICON_SIZE, NODE_ICON_CENTER_Y, nodePort, ZONE_MIN_WIDTH, ZONE_MIN_HEIGHT, ZONE_SIZE_LIMIT, type WorkflowSelection, type CanvasZoneFrame, type CanvasNode, type CanvasPositions } from '@/lib/workflow-layout';
+import { autoLayout, createZoneForNodes, executionEndpointKey, layoutBounds, moveNodes, moveZoneLayout, nodeDefinitions, resolveLayout, visibleLayoutKey, zoneFrames, NODE_HEIGHT, NODE_WIDTH, NODE_ICON_SIZE, NODE_ICON_CENTER_Y, ZONE_MIN_WIDTH, ZONE_MIN_HEIGHT, ZONE_SIZE_LIMIT, type WorkflowSelection, type CanvasZoneFrame, type CanvasNode, type CanvasPositions } from '@/lib/workflow-layout';
 import { ruleKindLabels } from '@/lib/node-catalog';
 import { connectionLabel } from '@/lib/product-copy';
 import { endpointLabel, getStageGraph } from '@/lib/workflow-graph';
@@ -14,6 +14,8 @@ import { workflowPathFocus } from '@/lib/workflow-path-focus';
 import { getWorkflowCanvasLinks, type WorkflowCanvasLink } from '@/lib/workflow-policy-canvas';
 import { listWorkflowPolicyChecks, parsePolicyScopedId, policyScopedId, workflowPolicyNode, workflowPolicyCheck } from '@/lib/workflow-policy-checks';
 import { policyNodePorts } from '@/lib/policy-graph';
+import { canvasPortPoint, canvasPortHitArea, facingPortSides, offsetPortPoint, type CanvasPortSide, type CanvasPortShape } from '@/lib/workflow-port-geometry';
+import { routeWorkflowEdge } from '@/lib/workflow-edge-routing';
 
 export type CanvasPortCreationSource = {stage:'pre'|'post';from:string;port:'next'|'true'|'false';position:{x:number;y:number}};
 export type CanvasViewport = {scrollLeft:number;scrollTop:number;zoom:number};
@@ -59,7 +61,7 @@ const icons = { keyword: Braces, regex: Regex, length: AlignLeft, llm: BrainCirc
 const stageLabels = { pre: '요청', post: '응답' };
 const selected = (node: CanvasNode, selection?: WorkflowSelection) => Boolean(selection && node.kind === selection.kind && (!('id' in selection) || node.id === selection.id));
 
-type LinkSource = { stage: 'pre' | 'post'; endpoint: string; port: 'next' | 'true' | 'false'; policyNodeKey?:string };
+type LinkSource = { stage: 'pre' | 'post'; endpoint: string; port: 'next' | 'true' | 'false'; policyNodeKey?:string; side?:CanvasPortSide };
 type Wire = { pointerId: number; source: LinkSource; x: number; y: number; clientX: number; clientY: number; moved: boolean; signature: string };
 type WirePreview = { source: LinkSource; point: { x: number; y: number }; targetKey?: string; target?: string; reason?: string; valid: boolean };
 type CanvasEdge = Omit<WorkflowCanvasLink,'id'> & { id?: string; kind: 'flow' | 'retry' | 'fork' | 'join' | 'policy' };
@@ -77,6 +79,10 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const [pathFocus,setPathFocus]=useState(false);
   const zoneDrag = useRef<ZoneDrag | undefined>(undefined);
   const [zoom, setZoom] = useState(()=>initialViewport&&Number.isFinite(initialViewport.zoom)?Math.max(.005,Math.min(1.5,initialViewport.zoom)):1);
+  const zoomValue=useRef(zoom);zoomValue.current=zoom;
+  const pendingZoomView=useRef<{zoom:number;scrollLeft:number;scrollTop:number}|undefined>(undefined);
+  const wheelZoomHandler=useRef<(event:WheelEvent)=>void>(()=>undefined);
+  wheelZoomHandler.current=handleCanvasWheel;
   const [fitRevision,setFitRevision]=useState(0);
   const fitActive=useRef(false);
   const viewCommand=useRef(0);
@@ -100,7 +106,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const [linkSource, setLinkSource] = useState<LinkSource>();
   const linkSourceRef = useRef<LinkSource | undefined>(undefined);
   const wire = useRef<Wire | undefined>(undefined);
-  const [policySource, setPolicySource] = useState<{id:string;port:string}>();
+  const [policySource, setPolicySource] = useState<{id:string;port:string;side?:CanvasPortSide}>();
   const policySourceRef = useRef<typeof policySource>(undefined);
   const policyWire = useRef<{pointerId:number;source:NonNullable<typeof policySource>;clientX:number;clientY:number;moved:boolean}|undefined>(undefined);
   const [policyWirePoint, setPolicyWirePoint] = useState<{x:number;y:number}>();
@@ -134,15 +140,21 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const conditionChoice=branchEligibility?.condition||{valid:pickedKeys.length===2,reason:'조건 분기는 연속된 검사 2개를 선택하세요.'};
   const baseBounds = layoutBounds(nodes, visible, frames);
   const switchSources=new Set(policyChecks.flatMap(scope=>scope.routing.graph?.nodes.filter(node=>node.kind==='switch').map(node=>policyScopedId(scope.id,node.id))??[]));
-  const parallelCounts=new Map<string,number>();
-  for(const scope of policyChecks)for(const edge of scope.routing.graph?.edges??[])if(switchSources.has(policyScopedId(scope.id,edge.from))){const key=`${scope.id}:${edge.from}:${edge.to}`;parallelCounts.set(key,(parallelCounts.get(key)??0)+1);}
+  const parallelCounts=new Map<string,{count:number;vertical:boolean}>();
+  for(const scope of policyChecks)for(const edge of scope.routing.graph?.edges??[])if(switchSources.has(policyScopedId(scope.id,edge.from))){
+    const key=`${scope.id}:${edge.from}:${edge.to}`,from=visible[`policy-node:${policyScopedId(scope.id,edge.from)}`],to=visible[`policy-node:${policyScopedId(scope.id,edge.to)}`];
+    const side=from&&to?facingPortSides(from,to).sourceSide:'right';
+    parallelCounts.set(key,{count:(parallelCounts.get(key)?.count??0)+1,vertical:side==='top'||side==='bottom'});
+  }
   // Parallel case lanes need scroll space, without moving any saved node.
-  const bounds = {...baseBounds,height:baseBounds.height+Math.max(0,...[...parallelCounts.values()].map(count=>count-1))*40};
+  const bounds = {...baseBounds,
+    width:baseBounds.width+Math.max(0,...[...parallelCounts.values()].filter(item=>item.vertical).map(item=>item.count-1))*40,
+    height:baseBounds.height+Math.max(0,...[...parallelCounts.values()].filter(item=>!item.vertical).map(item=>item.count-1))*40,
+  };
   const fitLatest=useRef({workflowId:workflow.id,bounds});
   fitLatest.current={workflowId:workflow.id,bounds};
   const searchView=useRef({workflowId:workflow.id,nodes,visible,bounds});
   searchView.current={workflowId:workflow.id,nodes,visible,bounds};
-  const flowBounds = layoutBounds(nodes, visible);
   const main = connections.find(connection => connection.id === workflow.mainConnectionId);
   const retry = workflow.responseRetry?.enabled === true;
   const maxRetries = workflow.responseRetry?.maxRetries ?? 1;
@@ -215,6 +227,12 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     return()=>cancelAnimationFrame(frame);
   }, [workflow.id]);
   useEffect(()=>{reportViewport();},[zoom]);
+  useEffect(()=>{
+    const element=viewport.current;if(!element)return;
+    const wheel=(event:WheelEvent)=>wheelZoomHandler.current(event);
+    element.addEventListener('wheel',wheel,{passive:false});
+    return()=>{element.removeEventListener('wheel',wheel);pendingZoomView.current=undefined;};
+  },[workflow.id]);
   useEffect(()=>{
     if(lastAutoFit.current!==autoFitRequest){lastAutoFit.current=autoFitRequest;if(autoFitRequest)pendingFit.current=++viewCommand.current;}
     const command=pendingFit.current;
@@ -448,20 +466,40 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     if (suppressBackgroundClick.current) { suppressBackgroundClick.current = false; return; }
     onBackgroundSelect?.();
   }
-  function consumeAutoFit() {pendingFit.current=undefined;if(autoFitRequest)consumedFitCallback.current?.(autoFitRequest);}
+  function consumeAutoFit() {pendingFit.current=undefined;pendingZoomView.current=undefined;if(autoFitRequest)consumedFitCallback.current?.(autoFitRequest);}
   function rememberViewport() {
     const element=viewport.current;if(!element)return;
-    previousViewport.current={scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom};setCanRestoreViewport(true);
+    previousViewport.current=pendingZoomView.current??{scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom:zoomValue.current};setCanRestoreViewport(true);
   }
-  function setViewZoom(nextZoom:number) {
+  function handleCanvasWheel(event:WheelEvent) {
+    if(event.defaultPrevented||!(event.ctrlKey||event.metaKey)||!Number.isFinite(event.deltaY)||event.deltaY===0)return;
+    if(event.target instanceof Element&&event.target.closest('input,textarea,select,[contenteditable="true"]'))return;
     const element=viewport.current;if(!element)return;
+    // Ctrl+wheel is also the browser's trackpad pinch gesture. Only the canvas
+    // consumes it; normal wheel scrolling and the rest of the page stay native.
+    event.preventDefault();
+    const delta=event.deltaY*(event.deltaMode===1?16:event.deltaMode===2?element.clientHeight:1);
+    const current=pendingZoomView.current?.zoom??zoomValue.current;
+    setViewZoom(Math.max(.005,Math.min(1.5,current*Math.exp(-Math.max(-1000,Math.min(1000,delta))*.0015))),{clientX:event.clientX,clientY:event.clientY});
+  }
+  function setViewZoom(requestedZoom:number,anchor?:{clientX:number;clientY:number}) {
+    const element=viewport.current;if(!element)return;
+    const current=pendingZoomView.current??{zoom:zoomValue.current,scrollLeft:element.scrollLeft,scrollTop:element.scrollTop};
+    const nextZoom=Math.max(.005,Math.min(1.5,requestedZoom));
+    if(!Number.isFinite(nextZoom)||nextZoom===current.zoom)return;
     rememberViewport();const command=++viewCommand.current;fitActive.current=false;consumeAutoFit();
-    const center={x:(element.scrollLeft+element.clientWidth/2)/zoom,y:(element.scrollTop+element.clientHeight/2)/zoom};
-    setZoom(nextZoom);
+    const box=anchor?element.getBoundingClientRect():undefined;
+    const point={x:anchor&&box?Math.max(0,Math.min(element.clientWidth,anchor.clientX-box.left-element.clientLeft)):element.clientWidth/2,
+      y:anchor&&box?Math.max(0,Math.min(element.clientHeight,anchor.clientY-box.top-element.clientTop)):element.clientHeight/2};
+    const center={x:(current.scrollLeft+point.x)/current.zoom,y:(current.scrollTop+point.y)/current.zoom};
+    const next={zoom:nextZoom,
+      scrollLeft:Math.max(0,Math.min(Math.max(0,bounds.width*nextZoom-element.clientWidth),center.x*nextZoom-point.x)),
+      scrollTop:Math.max(0,Math.min(Math.max(0,bounds.height*nextZoom-element.clientHeight),center.y*nextZoom-point.y))};
+    pendingZoomView.current=next;zoomValue.current=nextZoom;setZoom(nextZoom);
     if(searchMoveFrame.current!==undefined)cancelAnimationFrame(searchMoveFrame.current);
     searchMoveFrame.current=requestAnimationFrame(()=>{
       if(command!==viewCommand.current)return;
-      element.scrollLeft=Math.max(0,center.x*nextZoom-element.clientWidth/2);element.scrollTop=Math.max(0,center.y*nextZoom-element.clientHeight/2);
+      element.scrollLeft=next.scrollLeft;element.scrollTop=next.scrollTop;pendingZoomView.current=undefined;
       viewportCallback.current?.({scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom:nextZoom});searchMoveFrame.current=undefined;
     });
   }
@@ -479,7 +517,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const result=searchWorkflowNodes(workflow,connections,'').find(item=>nodes.some(node=>node.key===item.key&&selected(node,selection)));
     if(result)focusSearchResult(result);
   }
-  function fit() {rememberViewport();pendingFit.current=++viewCommand.current;setFitRevision(value=>value+1);}
+  function fit() {rememberViewport();pendingZoomView.current=undefined;pendingFit.current=++viewCommand.current;setFitRevision(value=>value+1);}
   function arrange() {
     if (disabled) return;
     const element=viewport.current;
@@ -507,15 +545,38 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const edges: CanvasEdge[] = getWorkflowCanvasLinks(workflow).filter(edge=>knownKeys.has(edge.from)&&knownKeys.has(edge.to)).map(edge=>({...edge,kind:edge.id.startsWith('policy:')?'policy':'flow',port:edge.port||'next'}));
   if (retry) for (const group of workflow.post) edges.push({ from: endpointKey('post', `group:${group.id}`), to: 'main', kind: 'retry' });
   const insertionPoints = new Map<string, { x: number; y: number } | undefined>();
-  function connectionPoint(stage: 'pre' | 'post', endpoint: string, side: 'left' | 'right', port: string = 'next') {
+  function connectionKey(stage: 'pre' | 'post', endpoint: string, role: 'left' | 'right', preferred?:string) {
     let key = endpointKey(stage, endpoint);
-    if(side==='right'&&endpoint.startsWith('group:')){const scope=policyChecks.find(scope=>scope.rule?.enabled!==false&&scope.stage===stage&&`group:${scope.group?.id}`===endpoint);if(scope){const active=wire.current?.source??linkSource,preferred=active?.stage===stage&&active.endpoint===endpoint?active.policyNodeKey:undefined;const action=scope.routing.graph?.nodes.find(node=>node.kind==='action'&&node.action==='main');if(preferred&&visible[preferred])key=preferred;else if(action)key=`policy-node:${policyScopedId(scope.id,action.id)}`;}}
-    const point = nodePort(visible[key], side);
-    if (side === 'right' && endpoint.startsWith('control:') && (port === 'true' || port === 'false')) {
-      // Two distinct ports follow the condition diamond's upper and lower edges.
-      return { x: point.x - 12, y: point.y + (port === 'true' ? -12 : 12) };
-    }
-    return point;
+    if(role==='right'&&endpoint.startsWith('group:')){const scope=policyChecks.find(scope=>scope.rule?.enabled!==false&&scope.stage===stage&&`group:${scope.group?.id}`===endpoint);if(scope){const action=scope.routing.graph?.nodes.find(node=>node.kind==='action'&&node.action==='main');if(preferred&&visible[preferred])key=preferred;else if(action)key=`policy-node:${policyScopedId(scope.id,action.id)}`;}}
+    return key;
+  }
+  function portShape(key:string):CanvasPortShape {
+    const node=nodes.find(node=>node.key===key);
+    if(!node)return 'circle';
+    if(node.kind==='input'||node.kind==='output'||node.kind==='group')return 'square';
+    if(node.kind==='main'||node.kind==='policy')return 'hexagon';
+    if(node.kind==='policy-node')return workflowPolicyNode(workflow,node.id)?.node.kind==='action'?'circle':'diamond';
+    if(node.kind==='control')return stageGraphs[node.stage!].nodes.find(control=>control.id===node.id)?.kind==='condition'?'diamond':'circle';
+    const rule=node.stage?workflow[node.stage].find(group=>group.id===node.groupId)?.rules.find(rule=>rule.id===node.id):undefined;
+    return rule?.kind==='policy'?'hexagon':'circle';
+  }
+  function anchorPoint(key:string,side:CanvasPortSide,port?:string) {
+    return canvasPortPoint(visible[key],side,portShape(key),port==='true'||port==='false'?port:undefined);
+  }
+  function edgeSides(edge:CanvasEdge) {
+    return facingPortSides(visible[edge.from],visible[edge.to]);
+  }
+  function portSides(key:string,role:'left'|'right',port?:string):CanvasPortSide[] {
+    const related=edges.filter(edge=>edge.kind!=='retry'&&(role==='right'?edge.from===key&&(!port||edge.port===port):edge.to===key));
+    const sides=related.map(edge=>role==='right'?edgeSides(edge).sourceSide:edgeSides(edge).targetSide);
+    return sides.length?[...new Set(sides)]:[role];
+  }
+  function connectionPoint(stage: 'pre' | 'post', endpoint: string, role: 'left' | 'right', port: string = 'next', side?:CanvasPortSide) {
+    const active=wire.current?.source??linkSource;
+    const sourceActive=active?.stage===stage&&active.endpoint===endpoint;
+    const key=connectionKey(stage,endpoint,role,sourceActive?active.policyNodeKey:undefined);
+    const actualSide=side??(role==='right'&&sourceActive?active.side:undefined)??portSides(key,role,role==='right'?port:undefined)[0];
+    return anchorPoint(key,actualSide,role==='right'?port:undefined);
   }
   function validSource(source: LinkSource) {
     const control = stageGraphs[source.stage].nodes.find(node => `control:${node.id}` === source.endpoint);
@@ -530,7 +591,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   }
   function chooseSource(source: LinkSource) {
     if (!canConnect || !validSource(source)) return;
-    if (linkSourceRef.current?.stage === source.stage && linkSourceRef.current.endpoint === source.endpoint && linkSourceRef.current.port === source.port) { setPendingLink(); return; }
+    if (linkSourceRef.current?.stage === source.stage && linkSourceRef.current.endpoint === source.endpoint && linkSourceRef.current.port === source.port && linkSourceRef.current.side===source.side) { setPendingLink(); return; }
     cancelPolicyWire(true); setPendingLink(source);
     setAnnouncement(`${canvasEndpointLabel(source.stage, source.endpoint)}에서 연결할 대상을 선택하세요.`);
   }
@@ -538,7 +599,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     if (!canConnect || !onConnect) return;
     const source = linkSourceRef.current;
     const reject = (message: string) => { setAnnouncement(message); notify?.(message); };
-    if (!source) { reject('오른쪽 연결점을 먼저 선택하세요.'); return; }
+    if (!source) { reject('출력 연결점을 먼저 선택하세요.'); return; }
     if (source.stage !== stage) { reject('요청 검사와 응답 검사는 서로 연결할 수 없습니다.'); return; }
     if (!validSource(source)) { setPendingLink(); reject('선택한 연결점이 변경되었습니다. 시작점을 다시 선택하세요.'); return; }
     // Commit intent is checked again even when its hover preview was cached.
@@ -571,10 +632,9 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const box = element.getBoundingClientRect();
     return { x: (clientX - box.left - element.clientLeft + element.scrollLeft) / zoom - bounds.offsetX, y: (clientY - box.top - element.clientTop + element.scrollTop) / zoom - bounds.offsetY };
   }
-  function policyPoint(key: string, side: 'left'|'right', port?: string) {
-    const point = nodePort(visible[key],side);
-    const definition=key.startsWith('policy-node:')?workflowPolicyNode(workflow,key.slice('policy-node:'.length))?.node:undefined;
-    return side==='right'&&definition?.kind!=='switch'&&(port==='true'||port==='false')?{x:point.x-10,y:point.y+(port==='true'?-12:12)}:point;
+  function policyPoint(key: string, role: 'left'|'right', port?: string, side?:CanvasPortSide) {
+    const active=policyWire.current?.source??policySource;
+    return anchorPoint(key,side??(active&&role==='right'&&`policy-node:${active.id}`===key&&active.port===port?active.side:undefined)??portSides(key,role,role==='right'?port:undefined)[0],role==='right'?port:undefined);
   }
   function policyPortLabel(id:string,port:string) {
     const node=workflowPolicyNode(workflow,id)?.node;
@@ -595,7 +655,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   function pickPolicySource(source: NonNullable<typeof policySource>) {
     if(!canPolicyConnect||!validPolicySource(source))return;
     cancelWire(true);setPendingLink();
-    if(policySourceRef.current?.id===source.id&&policySourceRef.current.port===source.port){cancelPolicyWire(true);return;}
+    if(policySourceRef.current?.id===source.id&&policySourceRef.current.port===source.port&&policySourceRef.current.side===source.side){cancelPolicyWire(true);return;}
     policySourceRef.current=source;setPolicySource(source);
     const node=workflowPolicyNode(workflow,source.id)?.node,label=node?policyNodePorts(node).find(item=>item.port===source.port)?.label:source.port;
     setAnnouncement(`${canvasNodeName(`policy-node:${source.id}`)}의 ${label} 경로에 연결할 정책 노드를 선택하세요.`);
@@ -624,27 +684,48 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     if(current.moved){suppressPolicyClick.current=true;const point=worldPoint(event.clientX,event.clientY);const candidates=nodes.filter(node=>node.kind==='policy-node'&&parsePolicyScopedId(node.id).ownerId===parsePolicyScopedId(current.source.id).ownerId&&node.id!==current.source.id&&point.x>=visible[node.key].x-10&&point.x<=visible[node.key].x+NODE_WIDTH+10&&point.y>=visible[node.key].y-10&&point.y<=visible[node.key].y+NODE_HEIGHT+10).sort((left,right)=>Math.hypot(point.x-visible[left.key].x,point.y-visible[left.key].y)-Math.hypot(point.x-visible[right.key].x,point.y-visible[right.key].y));if(candidates[0])connectPolicyNode(candidates[0],current.source);else if(onCreatePolicyFromPort){cancelPolicyWire(true);onCreatePolicyFromPort({from:current.source.id,port:current.source.port,position:point});}else setAnnouncement('정책 노드 위에 놓아 연결하세요.');}
     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
   }
+  function portButtonGeometry(key:string,side:CanvasPortSide,size:number,port?:string) {
+    const point=anchorPoint(key,side,port),branch=port==='true'||port==='false'?port:undefined;
+    const area=canvasPortHitArea(point,side,size,branch);
+    return {area,glyph:{position:'absolute' as const,left:point.x-area.left-4.5,top:point.y-area.top-4.5},label:{
+      left:point.x-area.left+(side==='left'?-8:side==='right'?8:0),
+      top:point.y-area.top+(side==='top'?-19:side==='bottom'?9:-6),
+      transform:side==='left'?'translateX(-100%)':side==='top'||side==='bottom'?'translateX(-50%)':undefined,
+    }};
+  }
+  function policyInputSides(key:string):CanvasPortSide[] {
+    const source=policySource;
+    return source&&visible[`policy-node:${source.id}`]
+      ?[facingPortSides(visible[`policy-node:${source.id}`],visible[key]).targetSide]:portSides(key,'left');
+  }
   function renderPolicyPorts() {
     if(!canPolicyConnect)return null;
     const hit=Math.max(28,28/zoom);
     return nodes.filter(node=>node.kind==='policy-node').flatMap(node=>{
       const context=workflowPolicyNode(workflow,node.id),definition=context?.node;if(!definition)return [];
-      const inputPoint=policyPoint(node.key,'left'),inputLeft=inputPoint.x+7-hit;
-      const input=[<button key={`${node.key}-in`} type="button" data-policy-connect-target={node.id} className="wc-graph-port target policy-port" style={{left:inputLeft,top:inputPoint.y-hit/2,width:hit,height:hit,pointerEvents:policySource?'auto':'none'}} tabIndex={policySource?0:-1} aria-disabled={!policySource} aria-label={`${definition.name} 정책 노드에 연결`} onClick={event=>{event.stopPropagation();connectPolicyNode(node);}}><span style={{position:'absolute',left:inputPoint.x-inputLeft-4.5,top:hit/2-4.5}}/></button>];
+      const input=policyInputSides(node.key).map(side=>{
+        const geometry=portButtonGeometry(node.key,side,hit);
+        return <button key={`${node.key}-in-${side}`} type="button" data-policy-connect-target={node.id} data-port-side={side} className="wc-graph-port target policy-port" style={{...geometry.area,pointerEvents:policySource?'auto':'none'}} tabIndex={policySource?0:-1} aria-disabled={!policySource} aria-label={`${definition.name} 정책 노드에 연결`} onClick={event=>{event.stopPropagation();connectPolicyNode(node);}}><span style={geometry.glyph}/></button>;
+      });
       if(definition.kind==='action'){
         if(definition.action!=='main'||context?.scope.id==='policy'||context?.scope.rule?.enabled===false||!context?.scope.group||!canConnect)return input;
-        const stage=context.scope.stage,endpoint=`group:${context.scope.group.id}`,port='next' as const,source={stage,endpoint,port,policyNodeKey:node.key},point=policyPoint(node.key,'right'),left=point.x-7,picked=linkSource?.stage===stage&&linkSource.endpoint===endpoint;
-        return [...input,<button key={`${node.key}-continue`} type="button" data-connect-port={`${stage}:${endpoint}:next`} className={`wc-graph-port source next ${picked?'picked':''}`} style={{left,top:point.y-hit/2,width:hit,height:hit}} aria-label={`${definition.name}의 다음 검사 연결 시작`} aria-pressed={picked} onPointerDown={event=>startWire(event,source)} onPointerMove={moveWire} onPointerUp={finishWire} onPointerCancel={()=>cancelWire(true)} onLostPointerCapture={()=>cancelWire(true)} onClick={event=>{event.stopPropagation();if(suppressWireClick.current&&event.detail!==0){suppressWireClick.current=false;return;}chooseSource(source);}}><span style={{position:'absolute',left:point.x-left-4.5,top:hit/2-4.5}}/></button>];
+        const stage=context.scope.stage,endpoint=`group:${context.scope.group.id}`,port='next' as const;
+        return [...input,...portSides(node.key,'right',port).map(side=>{
+          const source={stage,endpoint,port,policyNodeKey:node.key,side},geometry=portButtonGeometry(node.key,side,hit),picked=linkSource?.stage===stage&&linkSource.endpoint===endpoint&&(!linkSource.side||linkSource.side===side);
+          return <button key={`${node.key}-continue-${side}`} type="button" data-connect-port={`${stage}:${endpoint}:next`} data-port-side={side} className={`wc-graph-port source next ${picked?'picked':''}`} style={geometry.area} aria-label={`${definition.name}의 다음 검사 연결 시작`} aria-pressed={picked} onPointerDown={event=>startWire(event,source)} onPointerMove={moveWire} onPointerUp={finishWire} onPointerCancel={()=>cancelWire(true)} onLostPointerCapture={()=>cancelWire(true)} onClick={event=>{event.stopPropagation();if(suppressWireClick.current&&event.detail!==0){suppressWireClick.current=false;return;}chooseSource(source);}}><span style={geometry.glyph}/></button>;
+        })];
       }
       if(definition.kind==='switch')return input;
-      // Expand minimum hit areas outward. Centered areas cover the card body
-      // when zoomed out and can turn a settings click into connection intent.
-      return [...input,...(['true','false'] as const).map(port=>{const point=policyPoint(node.key,'right',port),source={id:node.id,port},picked=policySource?.id===node.id&&policySource.port===port,left=point.x-7,top=port==='true'?point.y+12-hit:point.y-12;return <button key={`${node.key}-${port}`} type="button" data-policy-connect-port={`${node.id}:${port}`} className={`wc-graph-port source policy-port ${port} ${picked?'picked':''}`} aria-label={`${definition.name}의 ${port==='true'?'참':'거짓'} 정책 경로 연결 시작`} aria-pressed={picked} style={{left,top,width:hit,height:hit}} onPointerDown={event=>startPolicyWire(event,source)} onPointerMove={movePolicyWire} onPointerUp={finishPolicyWire} onPointerCancel={()=>cancelPolicyWire(true)} onLostPointerCapture={()=>cancelPolicyWire()} onClick={event=>{event.stopPropagation();if(suppressPolicyClick.current&&event.detail!==0){suppressPolicyClick.current=false;return;}pickPolicySource(source);}}><span style={{position:'absolute',left:point.x-left-4.5,top:point.y-top-4.5}}/><small style={{left:point.x-left+8,top:point.y-top-6}}>{port==='true'?'참':'거짓'}</small></button>;})];
+      return [...input,...(['true','false'] as const).flatMap(port=>portSides(node.key,'right',port).map(side=>{
+        const source={id:node.id,port,side},geometry=portButtonGeometry(node.key,side,hit,port),picked=policySource?.id===node.id&&policySource.port===port&&(!policySource.side||policySource.side===side);
+        return <button key={`${node.key}-${port}-${side}`} type="button" data-policy-connect-port={`${node.id}:${port}`} data-port-side={side} className={`wc-graph-port source policy-port ${port} ${picked?'picked':''}`} aria-label={`${definition.name}의 ${port==='true'?'참':'거짓'} 정책 경로 연결 시작`} aria-pressed={picked} style={geometry.area} onPointerDown={event=>startPolicyWire(event,source)} onPointerMove={movePolicyWire} onPointerUp={finishPolicyWire} onPointerCancel={()=>cancelPolicyWire(true)} onLostPointerCapture={()=>cancelPolicyWire()} onClick={event=>{event.stopPropagation();if(suppressPolicyClick.current&&event.detail!==0){suppressPolicyClick.current=false;return;}pickPolicySource(source);}}><span style={geometry.glyph}/><small style={geometry.label}>{port==='true'?'참':'거짓'}</small></button>;
+      }))];
     });
   }
   function wireTarget(source: LinkSource, point: { x: number; y: number }): WirePreview {
+    const sourceKey=connectionKey(source.stage,source.endpoint,'right',source.policyNodeKey);
     const candidates = nodes.map(node => {
-      const position = visible[node.key]; const port = nodePort(position, 'left');
+      const position = visible[node.key]; const side=facingPortSides(visible[sourceKey],position).targetSide;const port = anchorPoint(node.key,side);
       const distance = Math.hypot(point.x - port.x, point.y - port.y);
       const inside = point.x >= position.x - 6 && point.x <= position.x + NODE_WIDTH + 6 && point.y >= position.y - 8 && point.y <= position.y + NODE_HEIGHT + 4;
       return { node, port, distance, inside };
@@ -714,83 +795,51 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       const endpoints = ['start', ...workflow[stage].map(group => `group:${group.id}`), ...stageGraphs[stage].nodes.map(node => `control:${node.id}`), 'end'];
       return endpoints.flatMap(endpoint => {
         if (!knownKeys.has(endpointKey(stage, endpoint))) return [];
-        const label = canvasEndpointLabel(stage, endpoint);
+        const label = canvasEndpointLabel(stage, endpoint),key=connectionKey(stage,endpoint,'left');
         const control = stageGraphs[stage].nodes.find(node => `control:${node.id}` === endpoint);
         const outputs: ('next' | 'true' | 'false')[] = control?.kind === 'condition' ? ['true', 'false'] : ['next'];
         const activeSource = wirePreview?.source || linkSource;
         const check = activeSource ? activeSource.stage === stage ? checkConnection(activeSource, endpoint) : { valid: false, reason: '요청 흐름과 응답 흐름은 서로 연결할 수 없습니다.' } : undefined;
-        const inputPoint=connectionPoint(stage,endpoint,'left'),inputLeft=inputPoint.x+7-hitSize;
-        const input = endpoint === 'start' ? [] : [<button key={`${stage}-${endpoint}-in`} type="button" data-connect-port={`${stage}:${endpoint}:in`} className={`wc-graph-port target ${check ? check.valid ? 'available' : 'unavailable' : ''} ${wirePreview?.valid && wirePreview.target === endpoint && wirePreview.source.stage === stage ? 'snapped' : ''}`} style={{ left:inputLeft,top:inputPoint.y-hitSize/2, width:hitSize, height:hitSize,pointerEvents:activeSource?'auto':'none' }} tabIndex={activeSource?0:-1} aria-label={`${label}에 연결${check?.reason ? `: ${check.reason}` : ''}`} aria-disabled={check?.valid === false} title={check?.reason || `${label}에 연결`} onClick={event => { event.stopPropagation(); chooseTarget(stage, endpoint); }}><span style={{position:'absolute',left:inputPoint.x-inputLeft-4.5,top:hitSize/2-4.5}}/></button>];
-        const policyGroup=endpoint.startsWith('group:')?workflow[stage].find(group=>`group:${group.id}`===endpoint&&group.rules.length===1&&group.rules[0].kind==='policy'&&group.rules[0].enabled):undefined;
-        const output = endpoint === 'end'||policyGroup ? [] : outputs.map(port => {
-          const point = connectionPoint(stage, endpoint, 'right', port);
-          const picked = linkSource?.stage === stage && linkSource.endpoint === endpoint && linkSource.port === port;
-          const portName = port === 'true' ? '참' : port === 'false' ? '거짓' : '다음';
-          const source = { stage, endpoint, port };
-          // Conditional hit targets meet at the diamond's middle, rather than
-          // overlap after zooming out. Their glyphs stay on the real ports.
-          const left=point.x-7,top=port==='true'?point.y+12-hitSize:port==='false'?point.y-12:point.y-hitSize/2;
-          return <button key={`${stage}-${endpoint}-${port}`} type="button" data-connect-port={`${stage}:${endpoint}:${port}`} className={`wc-graph-port source ${port} ${picked ? 'picked' : ''}`} style={{left,top,width:hitSize,height:hitSize}} aria-label={`${label}의 ${portName} 경로 연결 시작. 끌어서 노드에 연결하거나 빈 공간에 놓아 새 노드를 추가하세요. 선택 후 대상 노드를 선택할 수도 있습니다.`} aria-pressed={picked} title={`${label}의 ${portName} 경로 연결. 노드에 놓아 연결하거나 빈 공간에 놓아 새 노드를 추가합니다.`} onPointerDown={event => startWire(event, source)} onPointerMove={moveWire} onPointerUp={finishWire} onPointerCancel={() => cancelWire(true)} onLostPointerCapture={() => cancelWire(true)} onClick={event => { event.stopPropagation(); if (suppressWireClick.current && event.detail !== 0) { suppressWireClick.current = false; return; } suppressWireClick.current = false; chooseSource(source); }}><span style={{position:'absolute',left:point.x-left-4.5,top:point.y-top-4.5}} />{port !== 'next' && <small style={{left:point.x-left+8,top:point.y-top-6}}>{portName}</small>}</button>;
+        const activeKey=activeSource?connectionKey(activeSource.stage,activeSource.endpoint,'right',activeSource.policyNodeKey):undefined;
+        const inputSides=activeKey&&visible[activeKey]?[facingPortSides(visible[activeKey],visible[key]).targetSide]:portSides(key,'left');
+        const input = endpoint === 'start' ? [] : inputSides.map(side=>{
+          const geometry=portButtonGeometry(key,side,hitSize);
+          return <button key={`${stage}-${endpoint}-in-${side}`} type="button" data-connect-port={`${stage}:${endpoint}:in`} data-port-side={side} className={`wc-graph-port target ${check ? check.valid ? 'available' : 'unavailable' : ''} ${wirePreview?.valid && wirePreview.target === endpoint && wirePreview.source.stage === stage ? 'snapped' : ''}`} style={{...geometry.area,pointerEvents:activeSource?'auto':'none'}} tabIndex={activeSource?0:-1} aria-label={`${label}에 연결${check?.reason ? `: ${check.reason}` : ''}`} aria-disabled={!activeSource||check?.valid === false} title={check?.reason || `${label}에 연결`} onClick={event => { event.stopPropagation(); chooseTarget(stage, endpoint); }}><span style={geometry.glyph}/></button>;
         });
+        const policyGroup=endpoint.startsWith('group:')?workflow[stage].find(group=>`group:${group.id}`===endpoint&&group.rules.length===1&&group.rules[0].kind==='policy'&&group.rules[0].enabled):undefined;
+        const output = endpoint === 'end'||policyGroup ? [] : outputs.flatMap(port => portSides(key,'right',port).map(side=>{
+          const geometry=portButtonGeometry(key,side,hitSize,port);
+          const picked = linkSource?.stage === stage && linkSource.endpoint === endpoint && linkSource.port === port&&(!linkSource.side||linkSource.side===side);
+          const portName = port === 'true' ? '참' : port === 'false' ? '거짓' : '다음';
+          const source = { stage, endpoint, port, side };
+          return <button key={`${stage}-${endpoint}-${port}-${side}`} type="button" data-connect-port={`${stage}:${endpoint}:${port}`} data-port-side={side} className={`wc-graph-port source ${port} ${picked ? 'picked' : ''}`} style={geometry.area} aria-label={`${label}의 ${portName} 경로 연결 시작. 끌어서 노드에 연결하거나 빈 공간에 놓아 새 노드를 추가하세요. 선택 후 대상 노드를 선택할 수도 있습니다.`} aria-pressed={picked} title={`${label}의 ${portName} 경로 연결. 노드에 놓아 연결하거나 빈 공간에 놓아 새 노드를 추가합니다.`} onPointerDown={event => startWire(event, source)} onPointerMove={moveWire} onPointerUp={finishWire} onPointerCancel={() => cancelWire(true)} onLostPointerCapture={() => cancelWire(true)} onClick={event => { event.stopPropagation(); if (suppressWireClick.current && event.detail !== 0) { suppressWireClick.current = false; return; } suppressWireClick.current = false; chooseSource(source); }}><span style={geometry.glyph}/>{port !== 'next' && <small style={geometry.label}>{portName}</small>}</button>;
+        }));
         return [...input, ...output];
       });
     });
   }
-  function rect(key: string) {
-    return { ...visible[key], width: NODE_WIDTH, height: NODE_HEIGHT };
-  }
   function route(edge: CanvasEdge) {
-    const source = rect(edge.from); const target = rect(edge.to);
-    if (edge.kind === 'retry') {
-      const origin = nodePort(visible[edge.from], 'right'); const sx = origin.x; const sy = origin.y;
-      const targetPort = nodePort(visible[edge.to], 'left'); const end = { ...targetPort,x:targetPort.x-8 }; const rail = target.x - 24;
-      const bottom = flowBounds.height - flowBounds.offsetY - 40;
-      return { d: `M ${sx} ${sy} H ${source.x + NODE_WIDTH + 16} V ${bottom} H ${rail} V ${end.y} H ${end.x}`, sx, sy, tx: end.x, ty: end.y, points: [{ x: sx, y: sy }, { x: source.x + NODE_WIDTH + 16, y: sy }, { x: source.x + NODE_WIDTH + 16, y: bottom }, { x: rail, y: bottom }, { x: rail, y: end.y }, end] };
-    }
-    const start = edge.kind==='policy'?policyPoint(edge.from,'right',edge.port):edge.stage && edge.graphFrom ? connectionPoint(edge.stage, edge.graphFrom, 'right', edge.port) : edge.policyEdgeId ? policyPoint(edge.from,'right',edge.port) : nodePort(visible[edge.from], 'right');
-    const targetPort = edge.stage && edge.graphTo ? connectionPoint(edge.stage, edge.graphTo, 'left') : nodePort(visible[edge.to], 'left');
-    const end = { ...targetPort, x:targetPort.x-8 };
-    const obstacles = nodes.map(node => ({ ...visible[node.key], width: NODE_WIDTH, height: NODE_HEIGHT, key: node.key }));
-    const exit = Math.max(source.x + source.width, ...obstacles.filter(item => item.x < source.x + source.width && item.x + item.width > source.x).map(item => item.x + item.width)) + 16;
-    const entry = Math.min(target.x, ...obstacles.filter(item => item.x < target.x + target.width && item.x + item.width > target.x).map(item => item.x)) - 16;
+    const {sourceSide,targetSide}=edgeSides(edge);
+    const start=anchorPoint(edge.from,sourceSide,edge.port);
+    const target=anchorPoint(edge.to,targetSide);
+    const end=offsetPortPoint(target,targetSide,8);
     const switchSource=edge.policyEdgeId&&edge.from.startsWith('policy-node:')&&workflowPolicyNode(workflow,edge.from.slice('policy-node:'.length))?.node.kind==='switch';
     const siblings=switchSource?edges.filter(item=>item.policyEdgeId&&item.from===edge.from&&item.to===edge.to):[];
-    if(siblings.length>1){
-      const index=siblings.findIndex(item=>item.policyEdgeId===edge.policyEdgeId);
-      const clearSegment=(from:{x:number;y:number},to:{x:number;y:number})=>obstacles.every(item=>item.key===edge.from||item.key===edge.to||(from.x===to.x?from.x<item.x-8||from.x>item.x+item.width+8||Math.max(from.y,to.y)<item.y-8||Math.min(from.y,to.y)>item.y+item.height+8:from.y<item.y-8||from.y>item.y+item.height+8||Math.max(from.x,to.x)<item.x-8||Math.min(from.x,to.x)>item.x+item.width+8));
-      const first=exit<=entry?(start.y+end.y)/2:Math.max(source.y+source.height,target.y+target.height)+24;
-      let found=-1;
-      for(let candidate=0;candidate<256;candidate++){
-        const rail=first+candidate*40,points=[start,{x:exit,y:start.y},{x:exit,y:rail},{x:entry,y:rail},{x:entry,y:end.y},end];
-        if(points.slice(1).some((point,i)=>!clearSegment(points[i],point)))continue;
-        if(++found===index)return {d:`M ${start.x} ${start.y} H ${exit} V ${rail} H ${entry} V ${end.y} H ${end.x}`,sx:start.x,sy:start.y,tx:end.x,ty:end.y,points};
-      }
-      // If a manual layout blocks the side corridors, retain the existing
-      // obstacle-aware route rather than sending a case through a card.
-    }
-    if (exit <= entry) {
-      const between = obstacles.filter(item => item.key !== edge.from && item.key !== edge.to && item.x < entry && item.x + item.width > exit);
-      const blocked = between.some(item => item.y < Math.max(start.y, end.y) + 8 && item.y + item.height > Math.min(start.y, end.y) - 8);
-      if (blocked) {
-        const above = Math.min(start.y, end.y, ...between.map(item => item.y)) - 24;
-        const below = Math.max(start.y, end.y, ...between.map(item => item.y + item.height)) + 24;
-        const rail = edge.port === 'false' || above < 8 - bounds.offsetY ? below : above;
-        return { d: `M ${start.x} ${start.y} H ${exit} V ${rail} H ${entry} V ${end.y} H ${end.x}`, sx: start.x, sy: start.y, tx: end.x, ty: end.y, points: [start, { x: exit, y: start.y }, { x: exit, y: rail }, { x: entry, y: rail }, { x: entry, y: end.y }, end] };
-      }
-      const middle = (exit + entry) / 2;
-      const points = [start, ...Array.from({ length: 13 }, (_, index) => { const t = index / 12; const u = 1 - t; return { x: u ** 3 * exit + 3 * u ** 2 * t * middle + 3 * u * t ** 2 * middle + t ** 3 * entry, y: u ** 3 * start.y + 3 * u ** 2 * t * start.y + 3 * u * t ** 2 * end.y + t ** 3 * end.y }; }), end];
-      return { d: `M ${start.x} ${start.y} H ${exit} C ${middle} ${start.y}, ${middle} ${end.y}, ${entry} ${end.y} H ${end.x}`, sx: start.x, sy: start.y, tx: end.x, ty: end.y, points };
-    }
-    // Folded layouts keep each row left to right. A wrap to the next row
-    // returns through the free band between rows, outside all card labels.
-    if(target.y>=source.y+NODE_HEIGHT+24){
-      const candidates=[(source.y+NODE_HEIGHT+target.y)/2,source.y+NODE_HEIGHT+12,target.y-12];
-      const rail=candidates.find(y=>obstacles.every(item=>item.key===edge.from||item.key===edge.to||y<item.y-8||y>item.y+item.height+8||item.x>exit||item.x+item.width<entry));
-      if(rail!==undefined)return {d:`M ${start.x} ${start.y} H ${exit} V ${rail} H ${entry} V ${end.y} H ${end.x}`,sx:start.x,sy:start.y,tx:end.x,ty:end.y,points:[start,{x:exit,y:start.y},{x:exit,y:rail},{x:entry,y:rail},{x:entry,y:end.y},end]};
-    }
-    // A manually reversed flow follows an outside rail, beyond the icon and label.
-    const bottom = Math.max(source.y + source.height, target.y + target.height) + 24;
-    return { d: `M ${start.x} ${start.y} H ${exit} V ${bottom} H ${entry} V ${end.y} H ${end.x}`, sx: start.x, sy: start.y, tx: end.x, ty: end.y, points: [start, { x: exit, y: start.y }, { x: exit, y: bottom }, { x: entry, y: bottom }, { x: entry, y: end.y }, end] };
+    return routeWorkflowEdge({
+      start,end,sourceSide,targetSide,sourceKey:edge.from,targetKey:edge.to,
+      obstacles:nodes.map(node=>({...visible[node.key],width:NODE_WIDTH,height:NODE_HEIGHT,key:node.key})),
+      parallelIndex:Math.max(0,siblings.findIndex(item=>item.policyEdgeId===edge.policyEdgeId)),parallelCount:siblings.length,
+      preferredSide:edge.kind==='retry'||edge.port==='false'?'below':'above',minY:8-bounds.offsetY,
+      forceOutside:edge.kind==='retry',
+    });
+  }
+  function edgeLabelPosition(edge:CanvasEdge) {
+    const {sourceSide}=edgeSides(edge),point=offsetPortPoint(anchorPoint(edge.from,sourceSide,edge.port),sourceSide,20);
+    return {x:point.x,y:point.y+(sourceSide==='left'||sourceSide==='right'?-6:sourceSide==='top'?-4:8),textAnchor:sourceSide==='left'?'end' as const:sourceSide==='right'?'start' as const:'middle' as const};
+  }
+  function wirePath(sourceKey:string,side:CanvasPortSide,start:{x:number;y:number},end:{x:number;y:number},targetKey?:string) {
+    const targetSide=facingPortSides(visible[sourceKey],targetKey&&visible[targetKey]?visible[targetKey]:{x:end.x-NODE_WIDTH/2,y:end.y-NODE_ICON_CENTER_Y}).targetSide;
+    return routeWorkflowEdge({start,end,sourceSide:side,targetSide,sourceKey,targetKey:targetKey??'__wire_cursor__',obstacles:nodes.map(node=>({...visible[node.key],width:NODE_WIDTH,height:NODE_HEIGHT,key:node.key})),minY:8-bounds.offsetY}).d;
   }
   function edgeInsertPoint(edge: CanvasEdge) {
     const key = `${edge.stage}:${edge.graphId}`;
@@ -809,14 +858,14 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       const avoidsButtons = [...insertionPoints.values()].every(other => !other || Math.hypot(point.x - other.x, point.y - other.y) >= 26);
       const avoidsBranchLabels = edges.every(other => {
         if (!other.stage || !other.graphFrom || !['true', 'false'].includes(other.port || '')) return true;
-        const origin = connectionPoint(other.stage, other.graphFrom, 'right', other.port); const left = visible[other.from].x + NODE_WIDTH + 14; const top = origin.y + (other.port === 'true' ? -17 : 3);
-        return point.x < left - 12 || point.x > left + 20 + 12 || point.y < top - 12 || point.y > top + 11 + 12;
+        const label=edgeLabelPosition(other);
+        return Math.abs(point.x-label.x)>36||Math.abs(point.y-label.y)>24;
       });
       if (avoidsNodes && avoidsButtons && avoidsBranchLabels) { insertionPoints.set(key, point); return point; }
     }
     // Keep exactly one add action even in a crowded or reversed layout.
-    const source=connectionPoint(edge.stage!,edge.graphFrom!,'right',edge.port);
-    const fallback={x:source.x+24,y:source.y};
+    const side=edgeSides(edge).sourceSide,source=anchorPoint(edge.from,side,edge.port);
+    const fallback=offsetPortPoint(source,side,24);
     insertionPoints.set(key,fallback);
     return fallback;
   }
@@ -842,11 +891,11 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const edgeHitWidth=parallelSwitch?Math.min(28,Math.max(12,16/zoom)):Math.max(12,16/zoom);
     const removing=connectionImpact&&connectionImpact.stage===edge.stage&&connectionImpact.removedEdges.some(item=>item.id===edge.graphId&&item.from===edge.graphFrom&&item.to===edge.graphTo);
     const dimmed=focusedPath&&(edge.kind==='retry'?!focusedPath.nodes.has(edge.from):!focusedPath.edges.has(edge.id||`${edge.stage}:${edge.graphId}`));
-    return <g key={edge.id||`${edge.stage || ''}-${edge.graphId || index}-${edge.from}-${edge.to}`} data-from={edge.from} data-to={edge.to} data-stage={edge.stage} data-edge-id={edge.graphId||edge.policyEdgeId} data-policy-edge-id={edge.policyEdgeId} data-link-id={edge.id} data-port={edge.port} data-execution-state={state} data-impact={removing?'removed':undefined} className={`wc-connection ${edge.kind} ${seen ? 'executed' : ''} ${removing?'impact-removed':''} ${dimmed?'path-dimmed':''} ${edgeSelected?'selected':''}`}>
+    return <g key={edge.id||`${edge.stage || ''}-${edge.graphId || index}-${edge.from}-${edge.to}`} data-from={edge.from} data-to={edge.to} data-stage={edge.stage} data-source-side={edgeSides(edge).sourceSide} data-target-side={edgeSides(edge).targetSide} data-edge-id={edge.graphId||edge.policyEdgeId} data-policy-edge-id={edge.policyEdgeId} data-link-id={edge.id} data-port={edge.port} data-execution-state={state} data-impact={removing?'removed':undefined} className={`wc-connection ${edge.kind} ${seen ? 'executed' : ''} ${removing?'impact-removed':''} ${dimmed?'path-dimmed':''} ${edgeSelected?'selected':''}`}>
       {edgeSelected&&<path className="wc-edge-selection" d={line.d} aria-hidden="true"/>}
       <path className={`wc-edge ${edge.kind}`} d={line.d} markerEnd={`url(#${markerId}-${state})`}><title>{`${description}${executionView.hasExecution?` / ${canvasExecutionLabels[state]}`:''}`}</title></path>
       {editable && <path className="wc-edge-hit" d={line.d} style={{strokeWidth:edgeHitWidth}} role="button" tabIndex={0} aria-pressed={edge.policyEdgeId?edgeSelected:undefined} aria-label={`${description} 연결 설정`} onClick={event => { event.stopPropagation(); edit(); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); edit(); } }} />}
-      {showBranchLabel && <text className={`wc-branch-label ${edge.port}`} x={rect(edge.from).x + NODE_WIDTH + 17} y={line.sy + (edge.port === 'true' ? -6 : 13)}>{edge.label||branch}</text>}
+      {showBranchLabel && <text className={`wc-branch-label ${edge.port}`} {...edgeLabelPosition(edge)}>{edge.label||branch}</text>}
       {edge.kind === 'flow' && <circle className="wc-port" cx={line.sx} cy={line.sy} r={2.5} />}
       {insertion && <g className="wc-edge-add" role="button" tabIndex={0} data-insert-edge={`${edge.stage}:${edge.graphId}`} transform={`translate(${insertion.x} ${insertion.y})`} aria-label={`${description} 사이에 검사 추가`} onClick={event => { event.stopPropagation(); insertAt(edge, insertion); }} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); event.stopPropagation(); insertAt(edge, insertion); } }}><title>이 경로에 검사 추가</title><circle className="wc-edge-add-hit" r={Math.max(14,14/zoom)} /><circle className="wc-edge-add-face" r="10" /><path d="M -3.5 0 H 3.5 M 0 -3.5 V 3.5" /></g>}
     </g>;
@@ -886,7 +935,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const kind = isPolicy ? node.kind==='policy'?'policy':isPolicySwitch?'policy-switch':isPolicyCondition?'policy-condition':'policy-action' : terminal ? node.kind : node.kind === 'main' ? 'main' : node.kind === 'group' ? 'composite' : controlKind || rule?.kind || 'keyword';
     const Icon = policyModel?ShieldCheck:isPolicySwitch?Split:isPolicyCondition?GitBranch:policyNode?.kind==='action'?Zap:node.kind === 'input' ? LogIn : node.kind === 'output' ? LogOut : node.kind === 'main' ? BrainCircuit : node.kind === 'group' ? Layers3 : controlKind === 'condition' ? GitBranch : controlKind === 'fork' ? Split : controlKind === 'join' ? Merge : icons[rule?.kind || 'keyword'];
     const title = policyModel?(rule?.name||policy?.name||'정책 모델'):policyNode?policyNode.name:node.kind === 'input' ? '최초 입력' : node.kind === 'output' ? '최종 출력' : node.kind === 'main' ? main ? connectionLabel(main.name) : '응답 모델 선택' : node.kind === 'group' ? group?.name || '검사 조합' : control?.name || rule?.name || '';
-    const subtitle = policyModel?`${policy?.connectionSnapshot?.model||'정책 분류 모델'} / 고정 버전 ${policy?.version??1}`:policyNode?.kind==='action'?policyNode.action==='main'?(policyContext?.scope.id==='policy'?'Main LLM으로 응답 생성':'다음 검사 계속'):policyNode.action==='respond'?'지정 응답을 응답 검사로 전달':`오류 반환 ${policyNode.errorCode||''}`:policyNode?.kind==='switch'?`${policyNode.path||'필드를 선택하세요'} / 비교값 ${policyNode.cases.length}개와 기본 경로`:policyNode?policyCondition:node.kind === 'input' ? '요청 메시지와 대화 내용' : node.kind === 'output' ? '검사를 통과한 최종 응답 반환' : node.kind === 'main' ? main?.mode === 'demo' ? '예제 모드의 고정 응답' : main?.model || '모델 서버를 연결하세요' : node.kind === 'group' ? `검사 조합 ${group?.rules.length || 0}개, ${group?.mode === 'all' ? '모두 위반하면 차단' : '하나라도 위반하면 차단'}` : controlKind === 'condition' ? '조건에 따라 참과 거짓 경로 선택' : controlKind === 'fork' ? '연결한 경로를 병렬로 실행' : controlKind === 'join' ? '병렬 경로의 실행 결과 합류' : rule ? ruleKindLabels[rule.kind] : '';
+    const subtitle = policyModel?`${policy?.connectionSnapshot?.model||'정책 분류 모델'} / 고정 버전 ${policy?.version??1}`:policyNode?.kind==='action'?policyNode.action==='main'?(policyContext?.scope.id==='policy'?'Main LLM으로 응답 생성':'다음 검사 계속'):policyNode.action==='respond'?(policyNode.responseMode==='immediate'?'등록 응답을 즉시 최종 출력':'등록 응답을 POST 검사로 전달'):`오류 반환 ${policyNode.errorCode||''}`:policyNode?.kind==='switch'?`${policyNode.path||'필드를 선택하세요'} / 비교값 ${policyNode.cases.length}개와 기본 경로`:policyNode?policyCondition:node.kind === 'input' ? '요청 메시지와 대화 내용' : node.kind === 'output' ? '검사를 통과한 최종 응답 반환' : node.kind === 'main' ? main?.mode === 'demo' ? '예제 모드의 고정 응답' : main?.model || '모델 서버를 연결하세요' : node.kind === 'group' ? `검사 조합 ${group?.rules.length || 0}개, ${group?.mode === 'all' ? '모두 위반하면 차단' : '하나라도 위반하면 차단'}` : controlKind === 'condition' ? '조건에 따라 참과 거짓 경로 선택' : controlKind === 'fork' ? '연결한 경로를 병렬로 실행' : controlKind === 'join' ? '병렬 경로의 실행 결과 합류' : rule ? ruleKindLabels[rule.kind] : '';
     const traces = terminal ? undefined : execution?.traces.filter(trace => (isPolicy?trace.traceType==='policy'&&trace.ruleId===(node.kind==='policy'?'policy':`policy:${node.id}`):trace.traceType!=='policy'&&(node.kind === 'main' ? trace.stage === 'main' : trace.ruleId === node.id && trace.stage === node.stage))&&(trace.stage==='pre'||(trace.attempt??1)===executionView.postAttempt));
     const trace = traces?.at(-1);
     const executionState=executionView.nodes[node.key]||'idle';
@@ -926,11 +975,11 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       {selectionMode && <span className={`wc-selection-check ${pickedKeys.includes(node.key) ? 'checked' : ''}`} aria-hidden="true">{pickedKeys.includes(node.key) && <Check size={10} />}</span>}
       {badge && !executionView.hasExecution && <span className={`wc-status ${badge.tone}`} title={badge.text}>{badge.text}</span>}
       {impactProblems.length>0&&<span className="wc-impact-badge" aria-hidden="true">연결 확인</span>}
-    </button>{badge&&executionView.hasExecution&&<button type="button" className={`wc-status wc-inspect-status ${badge.tone}`} style={{left:position.x+NODE_WIDTH/2-9,top:position.y-12}} title={`${title}: ${badge.text}. 실행 내역 보기`} aria-label={`${title} 실행 내역`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();const target:WorkflowSelection=node.kind==='rule'||node.kind==='group'||node.kind==='control'||node.kind==='policy-node'?{kind:node.kind,id:node.id}:{kind:node.kind};(onInspect||onSelect)(target);}}>{badge.text}</button>}</Fragment>;
+    </button>{badge&&executionView.hasExecution&&<button type="button" className={`wc-status wc-inspect-status ${badge.tone}`} style={{left:position.x+NODE_WIDTH/2+24,top:position.y-12}} title={`${title}: ${badge.text}. 실행 내역 보기`} aria-label={`${title} 실행 내역`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();const target:WorkflowSelection=node.kind==='rule'||node.kind==='group'||node.kind==='control'||node.kind==='policy-node'?{kind:node.kind,id:node.id}:{kind:node.kind};(onInspect||onSelect)(target);}}>{badge.text}</button>}</Fragment>;
   }
   return <section className={`wc-shell ${disabled ? 'locked' : ''}`} aria-label="워크플로우 배치">
     <div className="wc-toolbar">
-    <div className="wc-controls"><div className="wc-view-controls"><button type="button" ref={searchTrigger} className={searchOpen?'wc-search-toggle active':'wc-search-toggle'} title="노드 찾기" aria-label="워크플로우 노드 찾기" aria-expanded={searchOpen} aria-controls={searchId} onClick={()=>setSearchOpen(value=>!value)}><Search size={14}/><span>노드 찾기</span></button><button type="button" className={pathFocus&&selectedNode ? 'wc-path-focus active' : 'wc-path-focus'} title="선택한 노드로 이어지는 앞뒤 경로를 강조합니다. 실행과 설정은 바뀌지 않습니다." aria-label="선택한 노드 경로 강조" aria-pressed={Boolean(pathFocus&&selectedNode)} disabled={!selectedNode} onClick={()=>setPathFocus(value=>!value)}><GitBranch size={14}/><span>경로</span></button><span className="wc-control-divider" aria-hidden="true"/><button type="button" title="축소" aria-label="워크플로우 축소" onClick={() => setViewZoom(Math.max(.005, Math.round((zoom - .1) * 1000) / 1000))} disabled={zoom <= .005}><Minus size={14} /></button><span>{zoom < .1 ? (zoom * 100).toFixed(1) : Math.round(zoom * 100)}%</span><button type="button" title="확대" aria-label="워크플로우 확대" onClick={() => setViewZoom(Math.min(1.5, Math.round((zoom + .1) * 100) / 100))} disabled={zoom >= 1.5}><Plus size={14} /></button><span className="wc-control-divider" aria-hidden="true" /><button type="button" onClick={fit} title="전체 워크플로우 보기" aria-label="전체 보기"><Maximize2 size={14} /><span>전체 보기</span></button><button type="button" onClick={()=>setViewZoom(1)} aria-label="100% 보기" title="100% 보기">100%</button><button type="button" disabled={!selectedNode} onClick={focusSelectedNode} aria-label="선택 노드로 이동" title="선택 노드로 이동"><Search size={14}/><span>선택 노드</span></button><button type="button" disabled={!canRestoreViewport} onClick={restoreView} aria-label="이전 화면으로 복귀" title="이전 화면으로 복귀"><RefreshCw size={14}/><span>이전 화면</span></button><button type="button" disabled={disabled} onClick={arrange} aria-label="자동 정렬"><LayoutGrid size={14} /><span>자동 정렬</span></button></div></div>
+    <div className="wc-controls"><div className="wc-view-controls"><button type="button" ref={searchTrigger} className={searchOpen?'wc-search-toggle active':'wc-search-toggle'} title="노드 찾기" aria-label="워크플로우 노드 찾기" aria-expanded={searchOpen} aria-controls={searchId} onClick={()=>setSearchOpen(value=>!value)}><Search size={14}/><span>노드 찾기</span></button><button type="button" className={pathFocus&&selectedNode ? 'wc-path-focus active' : 'wc-path-focus'} title="선택한 노드로 이어지는 앞뒤 경로를 강조합니다. 실행과 설정은 바뀌지 않습니다." aria-label="선택한 노드 경로 강조" aria-pressed={Boolean(pathFocus&&selectedNode)} disabled={!selectedNode} onClick={()=>setPathFocus(value=>!value)}><GitBranch size={14}/><span>경로</span></button><span className="wc-control-divider" aria-hidden="true"/><button type="button" title="축소 (Ctrl 또는 ⌘ + 마우스 휠)" aria-label="워크플로우 축소" onClick={() => setViewZoom(Math.max(.005, Math.round((zoom - .1) * 1000) / 1000))} disabled={zoom <= .005}><Minus size={14} /></button><span>{zoom < .1 ? (zoom * 100).toFixed(1) : Math.round(zoom * 100)}%</span><button type="button" title="확대 (Ctrl 또는 ⌘ + 마우스 휠)" aria-label="워크플로우 확대" onClick={() => setViewZoom(Math.min(1.5, Math.round((zoom + .1) * 100) / 100))} disabled={zoom >= 1.5}><Plus size={14} /></button><span className="wc-control-divider" aria-hidden="true" /><button type="button" onClick={fit} title="전체 워크플로우 보기" aria-label="전체 보기"><Maximize2 size={14} /><span>전체 보기</span></button><button type="button" onClick={()=>setViewZoom(1)} aria-label="100% 보기" title="100% 보기">100%</button><button type="button" disabled={!selectedNode} onClick={focusSelectedNode} aria-label="선택 노드로 이동" title="선택 노드로 이동"><Search size={14}/><span>선택 노드</span></button><button type="button" disabled={!canRestoreViewport} onClick={restoreView} aria-label="이전 화면으로 복귀" title="이전 화면으로 복귀"><RefreshCw size={14}/><span>이전 화면</span></button><button type="button" disabled={disabled} onClick={arrange} aria-label="자동 정렬"><LayoutGrid size={14} /><span>자동 정렬</span></button></div></div>
     {searchOpen&&<div id={searchId} className="wc-search-panel" ref={searchPanel} role="search" aria-label="워크플로우 노드 검색" onKeyDown={event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();closeSearch(true);}}}>
       <div className="wc-search-input"><Search size={15}/><input ref={searchInput} id={`${searchId}-input`} type="search" role="combobox" aria-label="노드 이름, 유형, 단계 또는 영역 검색" aria-autocomplete="list" aria-expanded="true" aria-controls={`${searchId}-results`} aria-activedescendant={searchResults[searchIndex]?`${searchId}-result-${searchIndex}`:undefined} placeholder="이름, 유형, 단계 또는 영역 검색" value={searchQuery} onChange={event=>{setSearchQuery(event.target.value);setSearchIndex(0);}} onKeyDown={searchKeys}/><button type="button" aria-label="노드 검색 닫기" onClick={()=>closeSearch(true)}><X size={14}/></button></div>
       <div className="wc-search-summary" role="status">{searchResults.length}개 노드{searchQuery.trim()?' 검색됨':''}</div>
@@ -944,7 +993,13 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     <div className={`wc-viewport ${panning ? 'panning' : ''} ${wirePreview ? 'wiring' : ''}`} ref={viewport} tabIndex={0} aria-label="노드 배치 영역" aria-describedby="workflow-canvas-help" onPointerDown={startPan} onPointerMove={movePan} onPointerUp={finishPan} onPointerCancel={cancelPan} onLostPointerCapture={cancelPan} onClick={activateBackground} onScroll={()=>{refreshWire();reportViewport();}}><div className="wc-scroll-area" style={{ width: bounds.width * zoom, height: bounds.height * zoom }}><div className="wc-plane" style={{ width: bounds.width, height: bounds.height, transform: `scale(${zoom})` }}>
       <div className="wc-world" style={{ left: bounds.offsetX, top: bounds.offsetY }}>
       {frames.map(renderFrame)}
-      <svg className="wc-edges" width={bounds.width - bounds.offsetX} height={bounds.height - bounds.offsetY} role="group" aria-label="워크플로우 연결"><defs>{(Object.keys(canvasExecutionColors) as CanvasExecutionState[]).map(state=><marker key={state} id={`${markerId}-${state}`} markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M 0 0 L 10 5 L 0 10 L 2.5 5 Z" fill={canvasExecutionColors[state]} /></marker>)}</defs>{edges.map(renderEdge)}{renderImpactEdges()}{policyWirePoint&&policyWire.current&&(()=>{const source=policyWire.current.source,start=policyPoint(`policy-node:${source.id}`,'right',source.port),end=policyWirePoint,bend=Math.max(36,Math.abs(end.x-start.x)/2);return <g className="wc-wire-preview" aria-hidden="true"><path d={`M ${start.x} ${start.y} C ${start.x+bend} ${start.y}, ${end.x-bend} ${end.y}, ${end.x} ${end.y}`}/><circle cx={end.x} cy={end.y} r={4}/></g>;})()}{wirePreview && (() => { const start = connectionPoint(wirePreview.source.stage, wirePreview.source.endpoint, 'right', wirePreview.source.port); const end = wirePreview.point; const bend = Math.max(36, Math.abs(end.x - start.x) / 2); return <g className={`wc-wire-preview ${wirePreview.valid ? 'valid' : wirePreview.targetKey ? 'invalid' : ''}`} aria-hidden="true"><path d={`M ${start.x} ${start.y} C ${start.x + bend} ${start.y}, ${end.x - bend} ${end.y}, ${end.x} ${end.y}`} /><circle cx={end.x} cy={end.y} r={4} /></g>; })()}</svg>
+      <svg className="wc-edges" width={bounds.width - bounds.offsetX} height={bounds.height - bounds.offsetY} role="group" aria-label="워크플로우 연결"><defs>{(Object.keys(canvasExecutionColors) as CanvasExecutionState[]).map(state=><marker key={state} id={`${markerId}-${state}`} markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M 0 0 L 10 5 L 0 10 L 2.5 5 Z" fill={canvasExecutionColors[state]} /></marker>)}</defs>{edges.map(renderEdge)}{renderImpactEdges()}{policyWirePoint&&policyWire.current&&(()=>{
+        const source=policyWire.current.source,key=`policy-node:${source.id}`,side=source.side??portSides(key,'right',source.port)[0],start=policyPoint(key,'right',source.port,side),end=policyWirePoint;
+        return <g className="wc-wire-preview" aria-hidden="true"><path d={wirePath(key,side,start,end)}/><circle cx={end.x} cy={end.y} r={4}/></g>;
+      })()}{wirePreview&&(()=>{
+        const source=wirePreview.source,key=connectionKey(source.stage,source.endpoint,'right',source.policyNodeKey),side=source.side??portSides(key,'right',source.port)[0],start=connectionPoint(source.stage,source.endpoint,'right',source.port,side),end=wirePreview.point;
+        return <g className={`wc-wire-preview ${wirePreview.valid?'valid':wirePreview.targetKey?'invalid':''}`} aria-hidden="true"><path d={wirePath(key,side,start,end,wirePreview.targetKey)}/><circle cx={end.x} cy={end.y} r={4}/></g>;
+      })()}</svg>
       {nodes.map(renderNode)}
       {renderConnectionPorts()}
       {renderPolicyPorts()}
@@ -952,7 +1007,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     {executionView.hasExecution&&!connectionImpact&&<div className="wc-execution-legend" aria-label="실행 상태 색상"><span className="running">실행 중</span><span className="completed">완료</span><span className="block">차단</span><span className="error">오류</span><span className="skipped">실행 안 함</span>{Object.values(executionView.edges).includes('unconfirmed')&&<span className="unconfirmed">선택 경로 구분 불가</span>}{stale&&<strong>설정 변경 전 결과</strong>}</div>}
     {connectionImpact&&<div className="wc-impact-legend" role="status"><strong>적용 전 연결 미리 보기</strong><span className="removed">제거할 연결</span><span className="added">추가할 연결</span>{connectionImpact.problems.length>0&&<span className="risk">연결 확인이 필요한 노드</span>}</div>}
     <div className="wc-bottom"><span className="wc-canvas-hint">{policySource ? <span className="wc-linking-cue">{`${canvasNodeName(`policy-node:${policySource.id}`)}의 ${policyPortLabel(policySource.id,policySource.port)} 경로에 연결할 정책 노드를 선택하세요.`}<button type="button" onClick={() => cancelPolicyWire(true)} aria-label="정책 연결 취소"><X size={12} /></button></span> : linkSource ? <span className="wc-linking-cue">{wirePreview?.reason || `${canvasEndpointLabel(linkSource.stage, linkSource.endpoint)} 다음에 연결할 노드를 선택하세요.`}<button type="button" onClick={() => { cancelWire(); setPendingLink(); }} aria-label="연결 취소"><X size={12} /></button></span> : disabled ? '노드를 선택해 설정 보기' : selectionMode ? '묶을 노드를 선택하세요. Shift 클릭으로도 선택할 수 있습니다.' : canConnect ? '연결점에서 노드로 연결하거나 빈 곳에 놓아 추가' : '배경을 끌어 이동'}</span><button type="button" className={`wc-retry-control ${retry ? 'enabled' : ''}`} title={retry ? `응답 검사에서 차단되면 최대 ${maxRetries}회 다시 생성합니다.` : '응답 재작성 설정 열기'} onClick={onRetry}><RefreshCw size={13} />{retry ? `응답 재작성 ${maxRetries}회` : '응답 재작성 꺼짐'}</button></div>
-    <span id="workflow-canvas-help" className="wc-sr">{disabled ? '노드를 선택하면 설정을 확인할 수 있습니다.' : '노드를 끌어 배치하고 배경을 끌어 화면을 이동합니다. 오른쪽 연결점을 끌어 대상 노드에 놓거나, 연결점을 선택한 뒤 대상 노드를 선택해 연결합니다. 빈 공간에 놓으면 새 노드를 추가할 수 있습니다. Esc로 연결을 취소합니다. 연결선의 더하기 버튼은 해당 경로에 검사를 추가합니다. 화살표가 실행 방향을 표시합니다. 빈 배경을 선택하면 워크플로우 설정을 엽니다. 표시용 영역 제목을 끌면 포함된 노드가 함께 이동하며 실행 순서는 바뀌지 않습니다. Shift 클릭으로 여러 노드를 선택해 영역으로 묶을 수 있습니다. 방향키로 이동하고 Shift와 방향키를 함께 누르면 크게 이동합니다.'} 배치는 실행 순서에 영향을 주지 않습니다.</span>
+    <span id="workflow-canvas-help" className="wc-sr">{disabled ? '노드를 선택하면 설정을 확인할 수 있습니다.' : '노드를 끌어 배치하고 배경을 끌어 화면을 이동합니다. 연결점을 끌어 대상 노드에 놓거나, 연결점을 선택한 뒤 대상 노드를 선택해 연결합니다. 빈 공간에 놓으면 새 노드를 추가할 수 있습니다. Esc로 연결을 취소합니다. 연결선의 더하기 버튼은 해당 경로에 검사를 추가합니다. 화살표가 실행 방향을 표시합니다. 빈 배경을 선택하면 열린 설정 패널을 닫습니다. 표시용 영역 제목을 끌면 포함된 노드가 함께 이동하며 실행 순서는 바뀌지 않습니다. Shift 클릭으로 여러 노드를 선택해 영역으로 묶을 수 있습니다. 방향키로 이동하고 Shift와 방향키를 함께 누르면 크게 이동합니다.'} 캔버스 위에서 Ctrl 또는 ⌘ 키와 마우스 휠을 함께 사용하면 마우스 위치를 중심으로 확대하거나 축소합니다. 일반 휠은 화면을 스크롤합니다. 배치는 실행 순서에 영향을 주지 않습니다.</span>
     <span className="wc-sr" role="status" aria-live="polite">{announcement}</span>
   </section>;
 }

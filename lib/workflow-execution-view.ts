@@ -73,7 +73,7 @@ export function workflowExecutionView(workflow:Workflow,{execution,inspection,pr
       }else{
         // Legacy serial runs do not store flow traces. Their group decision is
         // derived with the same ANY/ALL rule as the engine, not a single rule.
-        let reached=stage==='pre'?execution.traces.length>0:currentMain?.status==='allow'||execution.policyRoute==='respond';
+        let reached=stage==='pre'?execution.traces.length>0:currentMain?.status==='allow'||execution.policyRoute==='respond'&&execution.policyResponseMode!=='immediate';
         observe(stage,'start',reached?'completed':'skipped',reached?getStageGraph(workflow,stage).edges.filter(edge=>edge.from==='start').map(edge=>edge.id):[]);
         for(const group of workflow[stage]){
           const traces=execution.traces.filter(trace=>trace.traceType!=='policy'&&trace.stage===stage&&trace.groupId===group.id&&(stage==='pre'||(trace.attempt??1)===postAttempt));
@@ -174,7 +174,7 @@ export function workflowExecutionView(workflow:Workflow,{execution,inspection,pr
           else if(route==='main')state=targetState('main');
           else if(route==='respond'){
             const postEdge=getStageGraph(workflow,'post').edges.find(edge=>edge.from==='start'&&link.id.endsWith(`:${edge.id}`));
-            state=postEdge?edges[`post:${postEdge.id}`]??state:targetState(link.to);
+            state=execution?.policyResponseMode==='immediate'?targetState(link.to):postEdge?edges[`post:${postEdge.id}`]??state:targetState(link.to);
           }
         }
       }

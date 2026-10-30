@@ -5,6 +5,7 @@ import json
 
 import pytest
 from playwright.sync_api import expect
+from workflow_events import observe_playground, playground_events
 
 
 WORKFLOW_ID = 'wf-switch-browser'
@@ -90,14 +91,14 @@ def run_question(page, text):
     close_panel(page)
     page.locator('.we-top-actions').get_by_role('button', name='실행', exact=True).click()
     page.get_by_label('워크플로우 실행 질문', exact=True).fill(text)
+    observe_playground(page)
     with page.expect_response(lambda response: response.url.endswith('/api/console')
                               and response.request.method == 'POST'
                               and response.request.post_data_json.get('action') == 'playground') as pending:
         page.get_by_role('button', name='질문 실행', exact=True).click()
     response = pending.value
-    response.finished()
-    assert response.status == 200, response.text()
-    events = [json.loads(line) for line in response.text().splitlines() if line.strip()]
+    assert response.status == 200
+    events = playground_events(page)
     result = next(event['result'] for event in events if event['type'] == 'result')
     expect(page.locator('.wr-last-result')).to_be_visible()
     assert next(trace for trace in result['traces'] if trace['ruleId'] == 'main')['status'] == 'skipped'

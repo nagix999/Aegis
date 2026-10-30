@@ -245,6 +245,15 @@
 .app-shell .wc-policy-create-tools{order:3;flex-basis:100%;display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:7px 10px;border:1px solid #ccd9e7;border-radius:6px;background:#fff;color:#4b6580;font-size:11px}
 .app-shell .wc-policy-create-tools button{display:inline-flex;align-items:center;gap:5px;padding:6px 8px;border:1px solid #d7e1ed;border-radius:5px;background:#f7faff;color:#426587}
 @container(max-width:760px){.app-shell .wc-toolbar{gap:6px;padding:8px}.app-shell .wc-toolbar .wc-controls{margin-left:0;order:1;width:100%}.app-shell .wc-toolbar .wc-selection-tools{order:2;width:100%}.app-shell .wc-toolbar .wc-view-controls{justify-content:space-between;gap:0}.app-shell .wc-toolbar .wc-view-controls button{padding:0 6px}.app-shell .wc-search-panel{top:58px;max-height:calc(100% - 80px)}}
+@media(max-width:700px){
+  .app-shell.workflow-editing .wc-toolbar{padding:6px;gap:5px}
+  .app-shell.workflow-editing .wc-toolbar .wc-controls{padding:4px}
+  .app-shell.workflow-editing .wc-toolbar .wc-view-controls{flex-wrap:nowrap;gap:0}
+  .app-shell.workflow-editing .wc-toolbar .wc-view-controls button{min-width:28px;height:30px;padding:0 3px}
+  .app-shell.workflow-editing .wc-toolbar .wc-view-controls button>span{display:none}
+  .app-shell.workflow-editing .wc-toolbar .wc-view-controls>span:not(.wc-control-divider){min-width:33px;font-size:10px}
+  .app-shell.workflow-editing .wc-toolbar .wc-control-divider{margin:0 2px}
+}
 
 .app-shell .wc-node[data-kind="policy-switch"]{--node-fill:#bdd3df;--node-glyph:#45687b}
 .app-shell .wc-node[data-kind="policy-switch"] .wc-kind-icon{border:0;border-radius:0;clip-path:polygon(50% 0,100% 50%,50% 100%,0 50%)}

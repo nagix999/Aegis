@@ -142,7 +142,7 @@ def _execution_failure() -> dict:
 def _evaluation_log(result: dict, workflow: dict, version: str) -> dict:
     reasons = {"allow": "검사를 통과했습니다.", "block": "검사 정책에 따라 차단했습니다.", "error": "검사 실행 중 오류가 발생했습니다.", "skipped": "실행하지 않았습니다."}
     log = {"id": result["id"], "source": "evaluation", "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": _now(), "status": result["status"], "stage": result["stage"], "latencyMs": result["latencyMs"], "reason": reasons[result["status"]], "traces": [{**trace, "reason": reasons[trace["status"]]} for trace in result["traces"]]}
-    for key in ("flowTraces", "regenerationCount", "usage", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks"):
+    for key in ("flowTraces", "regenerationCount", "usage", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks", "policyResponseMode"):
         if key in result:
             log[key] = copy.deepcopy(result[key])
     if "attempts" in result:

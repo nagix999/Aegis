@@ -2,7 +2,7 @@ import type { ExecutionResult, PolicyRoute, Workflow } from '@/lib/aegis-types';
 import { policyScopedId, workflowPolicyCheck } from '@/lib/workflow-policy-checks';
 
 export const policyRouteLabels:Record<PolicyRoute['action'],string>={main:'응답 모델 실행',respond:'등록 안내 응답',error:'지정 오류'};
-export function PolicyExecutionSummary({result,workflow,onSelectNode}:{result:Pick<ExecutionResult,'policyDecision'|'policyRoute'|'policyCode'|'policyPath'|'policyChecks'>;workflow?:Workflow;onSelectNode?:(nodeId:string)=>void}){
+export function PolicyExecutionSummary({result,workflow,onSelectNode}:{result:Pick<ExecutionResult,'policyDecision'|'policyRoute'|'policyResponseMode'|'policyCode'|'policyPath'|'policyChecks'>;workflow?:Workflow;onSelectNode?:(nodeId:string)=>void}){
   const legacy=Boolean(result.policyDecision||result.policyRoute||result.policyCode),checks=result.policyChecks??[];
   if(!legacy&&!checks.length)return null;
   function nodePath(ownerId:string,path:string[]){
@@ -13,6 +13,7 @@ export function PolicyExecutionSummary({result,workflow,onSelectNode}:{result:Pi
     {legacy&&<div style={{display:'flex',flexWrap:'wrap',gap:'6px 12px'}}>
       {result.policyDecision&&<span>정책 판정: <code>{result.policyDecision}</code></span>}
       {result.policyRoute&&<span>선택 경로: {policyRouteLabels[result.policyRoute]}</span>}
+      {result.policyRoute==='respond'&&<span>반환 방식: {result.policyResponseMode==='immediate'?'즉시 최종 출력':'POST 검사 후 반환'}</span>}
       {result.policyCode&&<span>공개 오류 코드: <code>{result.policyCode}</code></span>}
       {!!result.policyPath?.length&&nodePath('policy',result.policyPath)}
     </div>}

@@ -376,11 +376,14 @@ class PolicyRoute(ExactModel):
     decision: PolicyCode
     action: Literal["main", "respond", "error"]
     responseText: text(4000, trim=False) | None = None
+    responseMode: Literal["immediate", "post"] | None = None
     errorCode: PolicyCode | None = None
     errorMessage: text(500, trim=False) | None = None
 
     @model_validator(mode="after")
     def action_fields(self):
+        if self.action != "respond" and self.responseMode is not None:
+            raise ValueError("응답 반환 방식은 안내 응답 액션에서만 지정하세요.")
         if self.action == "respond":
             if not self.responseText or not self.responseText.strip() or self.errorCode is not None or self.errorMessage is not None:
                 raise ValueError("안내 응답 경로에는 응답 문구만 지정하세요.")
@@ -479,6 +482,7 @@ class PolicyActionNode(ExactModel):
     kind: Literal["action"]
     action: Literal["main", "respond", "error"]
     responseText: text(4000, trim=False) | None = None
+    responseMode: Literal["immediate", "post"] | None = None
     errorCode: PolicyCode | None = None
     errorMessage: text(500, trim=False) | None = None
 

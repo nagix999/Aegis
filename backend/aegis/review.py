@@ -8,7 +8,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
-ENGINE_VERSION = "8-python"
+ENGINE_VERSION = "9-python"
 
 
 def _number(value: int | float) -> str:
@@ -83,9 +83,15 @@ def execution_configuration(workflow: dict) -> dict:
         policy = routing["policy"]
         routing["policy"] = {key: value for key, value in policy.items() if key not in {"id", "name", "description", "version", "updatedAt"}}
         routing["policy"]["connectionSnapshot"] = {key: value for key, value in policy["connectionSnapshot"].items() if key != "name"}
-        routing["routes"] = [{key: value for key, value in route.items() if key in ({"decision", "action", "responseText"} if route["action"] == "respond" else {"decision", "action", "errorCode", "errorMessage"} if route["action"] == "error" else {"decision", "action"})} for route in routing["routes"]]
+        routing["routes"] = [{key: value for key, value in route.items() if key in ({"decision", "action", "responseText", "responseMode"} if route["action"] == "respond" else {"decision", "action", "errorCode", "errorMessage"} if route["action"] == "error" else {"decision", "action"})} for route in routing["routes"]]
+        for route in routing["routes"]:
+            if route["action"] == "respond":
+                route["responseMode"] = route.get("responseMode", "post")
         if "graph" in routing:
             routing["graph"]["nodes"] = [{key: value for key, value in node.items() if key != "name"} for node in routing["graph"]["nodes"]]
+            for node in routing["graph"]["nodes"]:
+                if node.get("kind") == "action" and node.get("action") == "respond":
+                    node["responseMode"] = node.get("responseMode", "post")
     if "policyRouting" in configuration:
         normalize_routing(configuration["policyRouting"])
     for stage in ("pre", "post"):

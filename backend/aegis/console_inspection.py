@@ -300,7 +300,7 @@ class ConsoleInspection:
                 trace = next((trace for trace in policy_traces if trace.get("ruleId") == f'policy:{local_id}'), None)
                 status = _status(trace["status"]) if trace else "skipped"
                 step = self.policy_steps.get((stage, owner, policy_node["id"], attempt), {})
-                action = {field: copy.deepcopy(policy_node[field]) for field in ("action", "responseText", "errorCode", "errorMessage") if field in policy_node}
+                action = {field: copy.deepcopy(policy_node[field]) for field in ("action", "responseText", "responseMode", "errorCode", "errorMessage") if field in policy_node}
                 output = self.capture({**action, **step}, "json", "이 정책 노드가 선택한 경로와 액션입니다.") if step or action else status_output(status)
                 if policy_node.get("action") == "respond" and status != "skipped" and "responseText" in policy_node:
                     output = self.capture(policy_node["responseText"], "text", "정책 액션이 선택한 등록 응답 원문입니다.", length=js_length(policy_node["responseText"]))
@@ -314,7 +314,7 @@ class ConsoleInspection:
             append("main", "main", "main", trace["status"], self.main_inputs.get(attempt, _none("모델 입력을 관찰하지 못했습니다.")), response_input(attempt),
                    attempt=attempt, latency=trace.get("latencyMs"), skip_reason=trace.get("reason"))
         final_value = self.capture({"status": result["status"], "output": result.get("output", ""),
-            **{key: result[key] for key in ("reason", "finishReason", "policyCode", "publicMessage") if key in result}}, "json", "호출자에게 실제로 반환하는 업무 결과입니다.")
+            **{key: result[key] for key in ("reason", "finishReason", "policyCode", "publicMessage", "policyResponseMode") if key in result}}, "json", "호출자에게 실제로 반환하는 업무 결과입니다.")
         append("output", "output", "complete", "completed" if allowed else result["status"], response_input(final_attempt), final_value)
         details = {"request": {"messages": copy.deepcopy(self.messages), "inputScope": self.workflow.get("inputScope", "conversation"), "inspectionText": self.request_text}, "nodes": nodes}
         if self.truncated:

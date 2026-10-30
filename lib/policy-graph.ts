@@ -64,6 +64,7 @@ export function policyGraphErrors(graph: PolicyGraph, schema?:Record<string,unkn
     else if (node.kind !== 'action') errors.push(...policyConditionErrors(node.condition));
     else {
       if (!['main','respond','error'].includes(node.action)) errors.push('액션을 선택하세요.');
+      if(node.responseMode!==undefined&&(node.action!=='respond'||!['immediate','post'].includes(node.responseMode)))errors.push('응답 반환 방식은 등록 안내 응답에서 즉시 출력 또는 POST 검사 후 반환으로 선택하세요.');
       if (node.action === 'respond' && (typeof node.responseText !== 'string' || !node.responseText.trim() || node.responseText.length > 4000)) errors.push('등록 안내 응답은 1~4,000자로 입력하세요.');
       if (node.action === 'error' && (typeof node.errorCode !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(node.errorCode) || typeof node.errorMessage !== 'string' || !node.errorMessage.trim() || node.errorMessage.length > 500)) errors.push('공개 오류 코드와 1~500자 메시지를 입력하세요.');
     }

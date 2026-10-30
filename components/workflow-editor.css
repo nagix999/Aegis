@@ -367,3 +367,35 @@
 @media(max-width:700px){.app-shell .we-layout.with-runner{height:560px;min-height:560px}.app-shell .we-run-dock.open{inset:0;height:100%;display:flex;flex-direction:column}.app-shell .we-run-dock.open .we-run-dock-body{flex:1;min-height:0;max-height:none}.app-shell .we-run-dock-head{flex-wrap:wrap;padding:5px 10px}.app-shell .we-run-dock-toggle strong{font-size:12px}.app-shell .we-run-expand{display:none}.app-shell .we-run-dock.expanded.open{height:100%}}
 .app-shell .we-policy-creation{display:flex;flex-direction:column;gap:10px}
 .app-shell .we-policy-creation>p{font-size:11px;line-height:1.7}
+
+.app-shell.workflow-editing .we-editor,.app-shell .we-editor.is-expanded{display:flex;flex-direction:column}
+.app-shell.workflow-editing .we-editor>.we-layout,.app-shell .we-editor.is-expanded>.we-layout{flex:1;height:auto;min-height:240px}
+.app-shell.workflow-editing .we-editor>:not(.we-layout):not(.we-json),.app-shell .we-editor.is-expanded>:not(.we-layout):not(.we-json){flex:none}
+.app-shell.workflow-editing .we-editor>.we-json,.app-shell .we-editor.is-expanded>.we-json{flex:1;min-height:240px;overflow:auto}
+.app-shell.workflow-editing .we-topbar,.app-shell .we-editor.is-expanded .we-topbar{min-height:46px;padding:7px 12px;gap:10px}
+.app-shell.workflow-editing .we-commandbar,.app-shell .we-editor.is-expanded .we-commandbar{min-height:44px;padding:6px 12px;gap:8px}
+.app-shell.workflow-editing .we-footer{padding:5px 12px;font-size:10px}
+.app-shell.workflow-editing .we-temporary-status{padding:5px 12px;font-size:10px}
+.app-shell.workflow-editing .we-checks,.app-shell .we-editor.is-expanded>.we-checks{max-height:30dvh;overflow:auto}
+.app-shell .we-expand-toggle{white-space:nowrap}
+.app-shell .we-expand-toggle[aria-pressed=true]{color:#436684;background:#edf4fa;border-color:#bfd0df}
+.app-shell .we-focus-title{max-width:34vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#3c5068;font-size:13px;font-weight:600}
+.app-shell .we-editor.is-expanded{position:fixed;inset:0;z-index:80;width:100%;height:100dvh;min-height:0;max-height:100dvh;margin:0;border:0;border-radius:0;box-shadow:none}
+.app-shell:has(.we-editor.is-expanded)>.sidebar,.app-shell:has(.we-editor.is-expanded)>.main-shell>.topbar,.app-shell:has(.we-editor.is-expanded) .editor-content>:not(.we-editor){visibility:hidden}
+.app-shell .we-editor.is-expanded>.we-footer{display:none}
+@media(max-width:700px){
+  .app-shell.workflow-editing .we-topbar,.app-shell .we-editor.is-expanded .we-topbar{flex-wrap:wrap;gap:5px}
+  .app-shell.workflow-editing .we-top-status{width:100%}
+  .app-shell.workflow-editing .we-top-actions{width:100%;gap:4px;flex-wrap:nowrap}
+  .app-shell.workflow-editing .we-top-actions>.btn{min-width:0;padding:6px 4px;gap:3px;font-size:10px;flex:1 1 0;justify-content:center;white-space:nowrap}
+  .app-shell.workflow-editing .we-commandbar{padding:5px 8px;gap:4px}
+  .app-shell.workflow-editing .we-command-left,.app-shell.workflow-editing .we-command-actions{gap:2px}
+  .app-shell.workflow-editing .we-command-left,.app-shell.workflow-editing .we-command-actions{flex-wrap:nowrap}
+  .app-shell.workflow-editing .we-command-divider{margin:0 3px}
+  .app-shell.workflow-editing .we-command-left>.we-command-button,.app-shell.workflow-editing .we-command-actions>.btn:not(.we-expand-toggle){flex:none;width:32px;min-width:32px;height:32px;padding:6px;gap:0;font-size:0}
+  .app-shell.workflow-editing .we-command-left>.we-check-toggle{position:relative}
+  .app-shell.workflow-editing .we-check-count{position:absolute;top:-3px;right:-3px;min-width:14px;font-size:9px;line-height:14px}
+  .app-shell.workflow-editing .we-temporary-status>span{display:none}
+  .app-shell.workflow-editing .we-footer{display:none}
+  .app-shell .we-focus-title{max-width:62vw}
+}

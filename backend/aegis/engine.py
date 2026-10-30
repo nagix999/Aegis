@@ -921,11 +921,18 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
                 skipped(workflow['post'], 'post', '정책 오류 경로에 따라 응답 검사를 실행하지 않았습니다.')
                 await skip_flow('post')
                 return await finish()
-            # A registered response is still untrusted until every selected POST
-            # check passes. It never falls back to Main or enters repair retries.
             output = route['responseText']
             attempt = 1 if retry_enabled else None
             observe('response', output, attempt)
+            response_mode = route.get('responseMode', 'post')
+            result['policyResponseMode'] = response_mode
+            if response_mode == 'immediate':
+                skipped(workflow['post'], 'post', '안내 응답을 즉시 반환하도록 선택해 응답 검사를 생략했습니다.')
+                await skip_flow('post')
+                result.update(status='allow', stage='complete', output=output, finishReason='stop', reason='정책에 등록된 안내 응답을 즉시 반환했습니다.')
+                return await finish()
+            # Existing responses still pass every selected POST check. They
+            # never fall back to Main or enter response repair retries.
             post_started = time.monotonic()
             post = await stage_run(workflow['post'], 'post', output, attempt)
             if retry_enabled:

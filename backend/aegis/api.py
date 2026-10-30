@@ -162,7 +162,7 @@ def deployment_request(actor: str, key: str, data: dict) -> dict:
 
 
 def record_log(result: dict, source: str, workflow: dict, version: str, key_id=None, deployment_id=None):
-    value = {"id": result["id"], "source": source, "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": now_iso(), **{key: result[key] for key in ("status", "stage", "latencyMs", "reason", "traces", "usage", "flowTraces", "attempts", "regenerationCount", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks") if key in result}}
+    value = {"id": result["id"], "source": source, "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": now_iso(), **{key: result[key] for key in ("status", "stage", "latencyMs", "reason", "traces", "usage", "flowTraces", "attempts", "regenerationCount", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks", "policyResponseMode") if key in result}}
     if key_id:
         value["keyId"] = key_id
     if deployment_id:

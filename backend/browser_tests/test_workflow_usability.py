@@ -5,6 +5,7 @@ import json
 
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError, expect
+from workflow_events import observe_playground, playground_events
 
 from test_switch_branching import (WORKFLOW_ID, choose_node, close_panel, enter,
                                    open_editor, save_editor, seed_workflow)
@@ -311,11 +312,12 @@ def test_execution_badge_opens_admin_json_and_selected_switch_port(page, console
     close_panel(page)
     page.locator('.we-top-actions').get_by_role('button', name='실행', exact=True).click()
     page.get_by_label('워크플로우 실행 질문', exact=True).fill('공백 문자열')
+    observe_playground(page)
     with page.expect_response(lambda response: response.url.endswith('/api/console') and response.request.method=='POST'
                               and response.request.post_data_json.get('action')=='playground') as pending:
         page.get_by_role('button', name='질문 실행', exact=True).click()
-    pending.value.finished()
-    events=[json.loads(line) for line in pending.value.text().splitlines() if line.strip()]
+    assert pending.value.status==200
+    events=playground_events(page)
     message=next(event for event in events if event['type']=='result')
     assert message['result']['status']=='allow'
     assert message['inspection']['nodes']
@@ -355,12 +357,12 @@ def test_blocked_post_response_is_visible_only_in_admin_node_details(page, conso
     close_panel(page)
     page.locator('.we-top-actions').get_by_role('button', name='실행', exact=True).click()
     page.get_by_label('워크플로우 실행 질문', exact=True).fill('공백 문자열')
+    observe_playground(page)
     with page.expect_response(lambda response: response.url.endswith('/api/console') and response.request.method=='POST'
                               and response.request.post_data_json.get('action')=='playground') as pending:
         page.get_by_role('button', name='질문 실행', exact=True).click()
-    pending.value.finished()
-    payload=pending.value.text()
-    message=next(json.loads(line) for line in payload.splitlines() if json.loads(line)['type']=='result')
+    assert pending.value.status==200
+    message=next(event for event in playground_events(page) if event['type']=='result')
     assert message['result']['status']=='block'
     assert message['result']['output']==''
     assert '선택된 경로 0' not in json.dumps(message['result'],ensure_ascii=False)
