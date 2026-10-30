@@ -185,6 +185,15 @@ test('ambiguous true and false links to one target stay neutral while actual vis
   const view=workflowExecutionView(workflow,{execution:policyResult(workflow)});
   assert.equal(view.nodes['policy-node:risk'],'completed');assert.equal(view.edges['policy:edge:service'],'unconfirmed');assert.equal(view.edges['policy:edge:other'],'unconfirmed');
 });
+test('console inspection identifies the exact selected port when both ports share a target',()=>{
+  const workflow=policyFixture(),graph=workflow.policyRouting!.graph!;
+  graph.edges.find(edge=>edge.id==='other')!.to='risk';
+  const value={availability:'withheld',type:'json',summary:'비공개'} as const;
+  const inspection={request:{messages:[],inputScope:'conversation' as const,inspectionText:''},nodes:[{nodeId:'policy-node:branch',kind:'policy-node' as const,stage:'pre' as const,status:'completed' as const,input:value,output:value,selectedPort:'true',selectedEdgeIds:['service']}]};
+  const view=workflowExecutionView(workflow,{execution:policyResult(workflow),inspection});
+  assert.equal(view.edges['policy:edge:service'],'completed');
+  assert.equal(view.edges['policy:edge:other'],'skipped');
+});
 test('legacy policy decision routes and stale policy graphs retain truthful boundary states',()=>{
   const workflow=policyFixture(),routing=workflow.policyRouting!,execution=policyResult(workflow,'respond');
   const stale=workflowExecutionView(workflow,{execution,stale:true});assert.ok(Object.values(stale.nodes).every(value=>value==='stale'));assert.ok(Object.values(stale.edges).every(value=>value==='stale'));

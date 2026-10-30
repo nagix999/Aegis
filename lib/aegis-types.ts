@@ -12,6 +12,10 @@ export type StageGraph = { nodes: FlowControlNode[]; edges: FlowEdge[] };
 export type WorkflowGraph = { version: 1; pre: StageGraph; post: StageGraph };
 export type FlowNodeTrace = { nodeId: string; stage: 'pre'|'post'; status: 'completed'|'skipped'|'block'|'error'; edgeIds: string[]; attempt?: number };
 export type WorkflowProgressEvent = { sequence: number; stage: 'pre'|'main'|'post'|'complete'; nodeId: string; status: 'running'|'completed'|'block'|'error'|'skipped'; edgeIds: string[]; attempt?: number };
+/** Ephemeral administrator-console details; never part of stored execution traces. */
+export type ConsoleInspectionValue = { availability:'available'|'withheld'|'not_applicable'; type:'text'|'messages'|'json'|'status'|'none'; source?:'request_messages'|'request_inspection'|'final_response'; length?:number; messageCount?:number; summary:string };
+export type ConsoleNodeInspection = { nodeId:string; kind:'input'|'rule'|'group'|'control'|'main'|'policy'|'policy-node'|'output'; stage:'pre'|'main'|'post'|'complete'; status:'completed'|'block'|'error'|'skipped'; attempt?:number; latencyMs?:number; input:ConsoleInspectionValue; output:ConsoleInspectionValue; selectedPort?:string; selectedEdgeIds?:string[]; skipReason?:string; schemaValid?:boolean; startedMs?:number; finishedMs?:number };
+export type ConsoleExecutionInspection = { request:{messages:ConversationMessage[];inputScope:InputScope;inspectionText:string}; nodes:ConsoleNodeInspection[]; truncated?:boolean };
 export type ResponseRetryPolicy = { enabled: boolean; maxRetries: number; instruction?: string };
 export type CanvasZone = { id: string; name: string; color: 'slate'|'blue'|'green'|'amber'|'violet'; nodeKeys: string[]; x: number; y: number; width: number; height: number };
 export type WorkflowLayout = { version: 1; positions: Record<string, { x: number; y: number }>; pinnedKeys?: string[]; zones?: CanvasZone[] };

@@ -2,15 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, ChevronRight, Database, LoaderCircle, MessageSquare, Play, Square, Braces } from 'lucide-react';
-import type { AppState, Connection, ConversationMessage, GenerationSettings, EvalResult, EvalRun, EvaluationStatus, ExecutionResult, Workflow, WorkflowProgressEvent } from '@/lib/aegis-types';
+import type { AppState, Connection, ConsoleExecutionInspection, ConversationMessage, GenerationSettings, EvalResult, EvalRun, EvaluationStatus, ExecutionResult, Workflow, WorkflowProgressEvent } from '@/lib/aegis-types';
 import { configurationFingerprint, executionConfiguration, matchesExpectation, referencedConnections } from '@/lib/workflow-review';
 import { evaluationPreflight, inspectDatasetCompatibility } from '@/lib/dataset-compatibility';
 import { Tag, type Act } from './console-ui';
 import { PolicyExecutionSummary, policyRouteLabels } from './policy-execution-summary';
 import './workflow-runner.css';
 
-export type WorkflowRunnerExecution = { input: string; result: ExecutionResult; fingerprint?: string; messages?: ConversationMessage[]; generationOptions?: GenerationSettings; mockResponse?: string };
-type WorkflowStreamMessage = { type: 'progress'; event: WorkflowProgressEvent } | { type: 'result'; result: ExecutionResult; fingerprint?: string } | { type: 'error'; error?: { message?: string; code?: string } };
+export type WorkflowRunnerExecution = { input: string; result: ExecutionResult; inspection?:ConsoleExecutionInspection; fingerprint?: string; messages?: ConversationMessage[]; generationOptions?: GenerationSettings; mockResponse?: string };
+type WorkflowStreamMessage = { type: 'progress'; event: WorkflowProgressEvent } | { type: 'result'; result: ExecutionResult; inspection?:ConsoleExecutionInspection; fingerprint?: string } | { type: 'error'; error?: { message?: string; code?: string } };
 type RunnerProps = { workflow: Workflow; connections: Connection[]; state?: AppState; act?: Act; readOnly?: boolean; disabled?: boolean; initialExecution?: WorkflowRunnerExecution; onPrepareExecution?: () => Promise<boolean>; onExecution?: (execution: WorkflowRunnerExecution) => void;onSelectPolicyNode?:(nodeId:string)=>void };
 
 export function parseRunnerConversation(text: string): { messages: ConversationMessage[]; generationOptions?: GenerationSettings } {
@@ -192,11 +192,11 @@ export function useWorkflowRunner({ workflow, connections, state, act, readOnly 
       setHasStarted(true); setExecution(undefined); setProgress([]); setRun(undefined); setResultFilter('all'); setSelectedRowId(''); selectedRow.current = '';
       setPhase('question');
       const abort = new AbortController(); controller.current = abort;
-      const response = await fetch('/api/console', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify({ action: 'playground', workflowId: workflow.id, target: 'draft', ...requestInput, progress: true, expectedFingerprint: fingerprint }), signal: abort.signal });
+      const response = await fetch('/api/console', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' }, body: JSON.stringify({ action: 'playground', workflowId: workflow.id, target: 'draft', ...requestInput, progress: true, inspect:true, expectedFingerprint: fingerprint }), signal: abort.signal });
       await readWorkflowEvents(response, message => {
         if (!stillCurrent(ticket)) return;
         if (message.type === 'progress') setProgress(previous => [...previous, message.event]);
-        if (message.type === 'result') { completed = true; showExecution({ input, result: message.result, fingerprint: message.fingerprint || fingerprint, ...requestInput }); setNotice('실행을 마쳤습니다. 노드를 선택하면 검사 결과를 확인할 수 있습니다.'); }
+        if (message.type === 'result') { completed = true; showExecution({ input, result: message.result, inspection:message.inspection, fingerprint: message.fingerprint || fingerprint, ...requestInput }); setNotice('실행을 마쳤습니다. 노드를 선택하면 검사 결과를 확인할 수 있습니다.'); }
       });
     } catch (failure) {
       if (stillCurrent(ticket)) { setError(failure instanceof Error ? failure.message : '워크플로우를 실행하지 못했습니다.'); setProgress([]); if (!completed && previous) { setExecution(previous); setNotice('아래에는 이전에 완료한 실행 결과를 표시합니다.'); } }

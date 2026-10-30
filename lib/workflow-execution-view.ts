@@ -1,4 +1,4 @@
-import type { ExecutionResult, RuleGroup, Trace, Workflow, WorkflowProgressEvent } from './aegis-types';
+import type { ConsoleExecutionInspection, ExecutionResult, RuleGroup, Trace, Workflow, WorkflowProgressEvent } from './aegis-types';
 // @ts-expect-error Node's strip-types runner resolves explicit .ts paths.
 import { getStageGraph } from './workflow-graph.ts';
 // @ts-expect-error Node's strip-types runner resolves explicit .ts paths.
@@ -28,7 +28,7 @@ function groupOutcome(group:RuleGroup,traces:Trace[]):CanvasExecutionState {
 }
 
 /** Derives display state from actual events or completed engine traces only. */
-export function workflowExecutionView(workflow:Workflow,{execution,progress=[],running=false,stale=false,executionAttempt}:{execution?:ExecutionResult;progress?:WorkflowProgressEvent[];running?:boolean;stale?:boolean;executionAttempt?:number}={}):WorkflowExecutionView {
+export function workflowExecutionView(workflow:Workflow,{execution,inspection,progress=[],running=false,stale=false,executionAttempt}:{execution?:ExecutionResult;inspection?:ConsoleExecutionInspection;progress?:WorkflowProgressEvent[];running?:boolean;stale?:boolean;executionAttempt?:number}={}):WorkflowExecutionView {
   const hasExecution=Boolean(execution||progress.length||running);
   const nodes:Record<string,CanvasExecutionState>=Object.fromEntries(nodeDefinitions(workflow).map(node=>[node.key,'idle']));
   const edges:Record<string,CanvasExecutionState>={};
@@ -160,7 +160,8 @@ export function workflowExecutionView(workflow:Workflow,{execution,progress=[],r
           // Node paths cannot distinguish true/false ports that share the same
           // target. Keep those links neutral instead of claiming both ran.
           const candidates=graph?.edges.filter(other=>other.from===edge.from&&other.to===edge.to)??[];
-          state=candidates.length===1?targetState(link.to):'unconfirmed';
+          const observed=inspection?.nodes.find(node=>node.nodeId===`policy-node:${edge.from}`)?.selectedEdgeIds;
+          state=observed?observed.includes(edge.id)?targetState(link.to):'skipped':candidates.length===1?targetState(link.to):'unconfirmed';
         }
       }else{
         const selectedV1=routing.policy.formatVersion!==2&&final&&routing.routes?.some((item,index)=>item.decision===execution.policyDecision&&link.id.startsWith(`policy:route:${index}:`));

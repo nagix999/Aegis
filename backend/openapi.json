@@ -3,7 +3,7 @@
   "info": {
     "title": "Aegis Gateway API",
     "description": "요청 검사와 응답 검사, 워크플로우 검증 및 OpenAI 형식 Gateway",
-    "version": "3.6.0"
+    "version": "3.7.0"
   },
   "paths": {
     "/api/auth/session": {
@@ -279,6 +279,10 @@
                     "minimum": 0,
                     "maximum": 1000,
                     "description": "save_policy의 현재 최신 버전. 신규 정책은 0입니다."
+                  },
+                  "inspect": {
+                    "type": "boolean",
+                    "description": "playground에서 관리자에게만 일시적인 노드 실행 상세를 반환합니다. result와 분리된 inspection이며 로그나 검증 기록에 저장하지 않습니다."
                   },
                   "idempotencyKey": {
                     "type": "string"

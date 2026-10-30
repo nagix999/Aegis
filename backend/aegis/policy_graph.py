@@ -298,7 +298,7 @@ def predicate_matches(predicate: dict, output: Any) -> bool:
     return False
 
 
-def execute_policy_graph(graph: dict, output: Any) -> dict:
+def execute_policy_graph(graph: dict, output: Any, *, on_step=None) -> dict:
     """Execute only a graph that passed validate_policy_graph; fail closed anyway."""
     from .engine import PolicyError
     by_id = {node['id']: node for node in graph['nodes']}
@@ -332,5 +332,10 @@ def execute_policy_graph(graph: dict, output: Any) -> dict:
         links = [edge for edge in graph['edges'] if edge['from'] == selected and edge['port'] == port]
         if len(links) != 1:
             break
+        if on_step is not None:
+            try:
+                on_step({'nodeId': selected, 'selectedPort': port, 'edgeIds': [links[0]['id']]})
+            except Exception:
+                pass  # Inspection is optional and cannot affect a policy decision.
         selected = links[0]['to']
     raise PolicyError('정책 분기 그래프가 등록된 동작에 도달하지 못했습니다.')

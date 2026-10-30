@@ -41,7 +41,7 @@ export function preparePolicyDraft(policy: PolicyDefinition, buffers: PolicyEdit
   if (parsed.error) errors.push(parsed.error);
   else value.outputSchema = parsed.schema!;
   value.examples = value.examples.map((example, index) => {
-    if(example.expectation?.mode==='fields') errors.push(...assertionDraftErrors(example.expectation.fields??[],buffers.fieldValues?.[example.id]??{}).map(error=>`${index+1}번 예제: ${error}`));
+    if(example.expectation?.mode==='fields') errors.push(...assertionDraftErrors(example.expectation.fields??[],buffers.fieldValues?.[example.id]??{},value.outputSchema).map(error=>`${index+1}번 예제: ${error}`));
     const { expectedDecision: _legacy, expectedOutput: _previous, ...rest } = example;
     const source = buffers.examples[example.id] ?? '';
     if (!source.trim()) { errors.push(`${index + 1}번 예제의 예상 JSON을 입력하세요.`); return rest; }

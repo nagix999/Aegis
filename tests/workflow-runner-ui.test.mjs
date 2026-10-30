@@ -62,7 +62,7 @@ test('stream parser rejects lost connections, malformed events and pre-stream AP
 test('question handler saves first and sends only its exact configuration proof with progress enabled', async () => {
   const f = fixture(); await f.actions.executeQuestion();
   assert.equal(f.requests.length, 1);
-  assert.deepEqual(JSON.parse(f.requests[0].init.body), { action: 'playground', workflowId: 'workflow', target: 'draft', input: '배송 문의', progress: true, expectedFingerprint: fingerprint });
+  assert.deepEqual(JSON.parse(f.requests[0].init.body), { action: 'playground', workflowId: 'workflow', target: 'draft', input: '배송 문의', progress: true, inspect:true, expectedFingerprint: fingerprint });
   assert.equal(f.shown[0].result.id, result.id); assert.equal(f.state.phase, 'idle'); assert.equal(f.state.hasStarted, true); assert.equal(f.state.error, '');
 });
 

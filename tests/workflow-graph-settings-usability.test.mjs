@@ -6,6 +6,7 @@ import ts from 'typescript';
 import * as graphs from '../lib/workflow-graph.ts';
 import * as connections from '../lib/workflow-connections.ts';
 import * as branching from '../lib/workflow-branching.ts';
+import {randomUuid} from '../lib/client-id.ts';
 import {initialState} from '../lib/aegis-seed.ts';
 const source=await readFile(new URL('../components/workflow-graph-settings.tsx',import.meta.url),'utf8');
 const code=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX}}).outputText;
@@ -21,7 +22,7 @@ function fixture({kind='condition',selected=true,edgeId,disabled=false,preset}={
  const states=[],refs=[],effects=[],pending=[],changes=[],notices=[],selectedEdges=[];let si=0,ri=0,ei=0,tree;const actions={current:null};
  const props={workflow,stage:'pre',disabled,selectedControlId:selected?'c':undefined,selectedEdgeId:edgeId,initialPreset:preset,nodeActionsRef:actions,onStageChange(){},onChange:next=>{changes.push(next);props.workflow=next;},onSelectControl(){},onSelectEdge:id=>selectedEdges.push(id),notify:m=>notices.push(m),onFocusEndpoint(){},onAddNode(){}};
  const hooks={useState(initial){const i=si++;if(!(i in states))states[i]=typeof initial==='function'?initial():initial;return[states[i],v=>states[i]=typeof v==='function'?v(states[i]):v];},useRef(initial){const i=ri++;return refs[i]||(refs[i]={current:initial});},useEffect(fn,deps){const i=ei++,before=effects[i];if(!before||deps.some((v,j)=>!Object.is(v,before[j]))){effects[i]=deps;pending.push(fn);}},useImperativeHandle(ref,fn){ref.current=fn();}};
- const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,structuredClone,crypto:globalThis.crypto,requestAnimationFrame:fn=>{fn();return 1;},require(spec){if(spec==='react')return hooks;if(spec==='react/jsx-runtime')return{jsx:element,jsxs:element};if(spec==='lucide-react')return new Proxy({},{get:(_,key)=>key});if(spec==='@/lib/workflow-graph')return graphs;if(spec==='@/lib/workflow-connections')return connections;if(spec==='@/lib/workflow-branching')return branching;if(spec.endsWith('.css'))return{};throw Error(spec);}});
+ const module={exports:{}};vm.runInNewContext(code,{module,exports:module.exports,structuredClone,crypto:globalThis.crypto,requestAnimationFrame:fn=>{fn();return 1;},require(spec){if(spec==='@/lib/client-id')return{randomUuid};if(spec==='react')return hooks;if(spec==='react/jsx-runtime')return{jsx:element,jsxs:element};if(spec==='lucide-react')return new Proxy({},{get:(_,key)=>key});if(spec==='@/lib/workflow-graph')return graphs;if(spec==='@/lib/workflow-connections')return connections;if(spec==='@/lib/workflow-branching')return branching;if(spec.endsWith('.css'))return{};throw Error(spec);}});
  function render(){si=0;ri=0;ei=0;tree=module.exports.WorkflowGraphSettings(props);return tree;}function settle(){render();while(pending.length)pending.shift()();return render();}
  return{props,actions,changes,notices,selectedEdges,render,settle,get tree(){return tree;}};
 }

@@ -17,7 +17,7 @@ def test_openapi_has_unique_actions_valid_model_refs_bodies_and_auth():
                     assert operation['requestBody']['required']
         assert len(ids)==len(set(ids))
         assert 'Workflow' in schema['components']['schemas']
-        assert schema['info']['version']=='3.6.0'
+        assert schema['info']['version']=='3.7.0'
         switch = schema['components']['schemas']['PolicySwitchNode']
         assert switch['properties']['kind']['const'] == 'switch'
         assert {'id', 'name', 'kind', 'path', 'cases'} <= set(switch['required'])
@@ -32,6 +32,7 @@ def test_openapi_has_unique_actions_valid_model_refs_bodies_and_auth():
         console=schema['paths']['/api/console']
         assert {'history','query','cursor','limit','runId','datasetId'} <= {item['name'] for item in console['get']['parameters']}
         assert console['post']['requestBody']['content']['application/json']['schema']['properties']['expectedVersion']['maximum']==1000
+        assert console['post']['requestBody']['content']['application/json']['schema']['properties']['inspect']['type']=='boolean'
         assert {'ConsoleSession':[]} in console['get']['security']
         assert {'ConsoleSession':[],'SessionCSRF':[]} in console['post']['security']
         assert {'ConsoleBasic':[]} in console['post']['security']

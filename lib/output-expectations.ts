@@ -1,6 +1,8 @@
 import type { PolicyExample, PolicyPredicate } from './aegis-types';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { policyGraphSchemaIssues } from './policy-schema-guidance.ts';
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { policyFieldInfo } from './policy-field-options.ts';
 
 const object = (value:unknown):value is Record<string,unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 const own = (value:object,key:string) => Object.prototype.hasOwnProperty.call(value,key);
@@ -27,10 +29,18 @@ export function fieldAssertionErrors(fields:unknown,schema?:Record<string,unknow
   if (!errors.length && schema) errors.push(...policyGraphSchemaIssues({version:1,entryNodeId:'check',nodes:[{id:'check',name:'검증 조건',kind:'branch',condition:{mode:'all',predicates:fields as PolicyPredicate[]}}],edges:[]},schema).map(issue=>issue.message));
   return [...new Set(errors)];
 }
-export function assertionDraftErrors(fields:PolicyPredicate[],drafts:AssertionDrafts):string[] {
+export function assertionDraftErrors(fields:PolicyPredicate[],drafts:AssertionDrafts,schema?:Record<string,unknown>):string[] {
   return fields.flatMap((field,index)=>{
     if(field.operator==='exists'||!own(drafts,String(index)))return [];
-    try {const value:unknown=JSON.parse(drafts[String(index)]);return fieldAssertionErrors([{...field,value}]);}
+    try {
+      const value:unknown=JSON.parse(drafts[String(index)]),errors=fieldAssertionErrors([{...field,value}],schema);
+      if(schema){
+        const info=policyFieldInfo(schema,field.path),types=field.operator==='contains'&&info.types.includes('array')?policyFieldInfo(schema,field.path+'/0').types:info.types;
+        const candidates=field.operator==='in'&&Array.isArray(value)?value:[value],type=(item:unknown)=>item===null?'null':Array.isArray(item)?'array':typeof item;
+        if(types.length&&candidates.some(item=>!types.includes(type(item))&&!(typeof item==='number'&&Number.isInteger(item)&&types.includes('integer'))))errors.push(`${index+1}번 출력 필드 비교값의 자료형을 선택한 스키마에 맞춰 주세요.`);
+      }
+      return [...new Set(errors)];
+    }
     catch{return [`${index+1}번 출력 필드 비교값의 JSON을 완성하세요.`];}
   });
 }

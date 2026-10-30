@@ -1,0 +1,21 @@
+.app-shell .ds-bulk-tools{display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:12px;color:#60778b}
+.app-shell .ds-authoring-context{margin:8px 0;padding:9px 12px;background:#f5f9fc;border:1px solid #e0e8f0;border-radius:6px;color:#5c7489;font-size:12px;line-height:1.7}
+.app-shell .ds-schema-impacts{margin:12px 0;padding:12px;border:1px solid #e6d7ae;border-radius:6px;background:#fffcf4;font-size:12px;color:#826c43}
+.app-shell .ds-schema-impacts>p{margin:7px 0}.app-shell .ds-schema-impacts>button{display:block;width:100%;padding:7px;border:0;background:transparent;text-align:left;color:#876d35;font-size:12px}
+.app-shell .ds-items-workspace:has(.ds-item-table){grid-template-columns:minmax(330px,.85fr) minmax(0,1.15fr)}
+.app-shell .ds-item-table{display:block;padding:0;max-height:690px;overflow:auto}
+.app-shell .ds-item-table table,.app-shell .ds-import-preview table{width:100%;border-collapse:collapse;text-align:left;font-size:11px}
+.app-shell .ds-item-table th,.app-shell .ds-import-preview th{position:sticky;top:0;padding:10px 7px;background:#f5f8fb;color:#6f8395;font-weight:500;border-bottom:1px solid #dce5ed;white-space:nowrap}
+.app-shell .ds-item-table td,.app-shell .ds-import-preview td{padding:8px 7px;border-bottom:1px solid #e8eef3;color:#5b7185;max-width:240px;overflow-wrap:anywhere}
+.app-shell .ds-item-table tr.active{background:#edf5f3}.app-shell .ds-item-table input[type=checkbox]{width:15px;height:15px;accent-color:#607e96}
+.app-shell .ds-item-table td button{display:block;width:100%;padding:0;border:0;background:transparent;text-align:left;color:inherit}
+.app-shell .ds-item-table strong{max-width:230px;white-space:normal;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;line-height:1.6}
+.app-shell .ds-authoring-dialog{width:760px;max-width:calc(100vw - 24px);max-height:calc(100dvh - 32px);display:flex;flex-direction:column;overflow:hidden}
+.app-shell .ds-authoring-form{padding:15px 20px;min-height:0;overflow:auto;font-size:12px;color:#60778b;line-height:1.7}
+.app-shell .ds-authoring-dialog>header,.app-shell .ds-authoring-dialog>footer{flex:none}
+.app-shell .ds-authoring-dialog>.ds-authoring-form{flex:1}.app-shell .ds-bulk-check{display:flex;gap:8px;align-items:center;margin:13px 0;font-size:12px}.app-shell .ds-bulk-check input{width:15px;height:15px}
+.app-shell .ds-import-preview{overflow:auto;max-height:280px;margin:12px 0;border:1px solid #e2e8ef;border-radius:5px}
+.app-shell .ev-field-expectations{margin:14px 0;padding:12px;border:1px solid #e2e8ef;border-radius:6px;font-size:12px;color:#5d7386}
+.app-shell .ev-field-expectations>strong{display:block;margin-bottom:8px}.app-shell .ev-field-expectations ul{margin:8px 0;padding-left:18px}.app-shell .ev-field-expectations li{padding:6px 0;overflow-wrap:anywhere}.app-shell .ev-field-expectations button{margin-left:8px;border:0;background:transparent;color:#5a75a0;font-size:11px}.app-shell .ev-field-expectations code{white-space:pre-wrap}
+@media(max-width:1200px){.app-shell .ds-items-workspace:has(.ds-item-table){grid-template-columns:1fr}.app-shell .ds-item-table{max-height:270px;border-right:0;border-bottom:1px solid #e2e8ef}}
+@media(max-width:600px){.app-shell .ds-authoring-form{padding:12px}.app-shell .ds-authoring-dialog>header,.app-shell .ds-authoring-dialog>footer{padding:12px}.app-shell .ds-item-table th,.app-shell .ds-item-table td{padding:8px 5px;font-size:10px}.app-shell .ds-item-table strong{max-width:160px;font-size:11px}}

@@ -549,7 +549,7 @@ def repair_messages(workflow: dict, original: list[dict], blocked: dict[str, set
     return messages
 
 
-async def execute_workflow(workflow: dict, connections: list[dict], ingress: dict, env: dict, messages: list[dict], options: dict | None = None, *, on_progress=None, cancel_event=None, client=None, expected_policy_fields=None) -> dict:
+async def execute_workflow(workflow: dict, connections: list[dict], ingress: dict, env: dict, messages: list[dict], options: dict | None = None, *, on_progress=None, cancel_event=None, client=None, expected_policy_fields=None, inspection=None) -> dict:
     started = time.monotonic()
     options = options or {}
     workflow = copy.deepcopy(workflow)
@@ -560,14 +560,23 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
         # These verdicts cannot change routing or become model instructions.
         result['policyFieldChecks'] = check_policy_fields(None, expected_policy_fields, available=False)
     sequence = 0
+    def observe(method, *values):
+        if inspection is not None:
+            try:
+                getattr(inspection, method)(*values)
+            except Exception:
+                pass  # Console observers cannot change execution or retry decisions.
     async def progress(stage, node, status, edges=None, attempt=None):
         nonlocal sequence
-        if not on_progress or sequence >= 2000:
+        if (not on_progress and inspection is None) or sequence >= 2000:
             return
         sequence += 1
         event = {'sequence': sequence, 'stage': stage, 'nodeId': node, 'status': status, 'edgeIds': list(edges or [])}
         if attempt is not None:
             event['attempt'] = attempt
+        observe('progress', event)
+        if not on_progress:
+            return
         try:
             answer = on_progress(event)
             if inspect.isawaitable(answer):
@@ -651,6 +660,8 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
             for edge in plan['outgoing'][key]:
                 edge_states[edge['id']] = 'active' if edge['id'] in activated else 'inactive'
             result['flowTraces'].append({'nodeId': key, 'stage': stage, 'status': status, 'edgeIds': activated, **({'attempt': attempt} if attempt is not None else {})})
+            if status == 'skipped':
+                observe('skip', stage, key, attempt, '다른 경로의 차단 또는 오류로 실행하지 않았습니다.' if halted else '조건 분기에서 선택되지 않아 실행하지 않았습니다.')
             await progress(stage, key, status, activated, attempt)
             if status == 'skipped' and key in plan['groups']:
                 skipped([plan['groups'][key]], stage, '다른 경로의 차단 또는 오류로 실행하지 않았습니다.' if halted else '조건 분기에서 선택되지 않아 실행하지 않았습니다.', attempt)
@@ -725,6 +736,7 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
         return {'status': 'allow', 'reason': '선택한 그래프 경로의 검사를 통과했습니다.'}
 
     async def stage_run(groups, stage, text, attempt=None):
+        observe('stage_input', stage, text, attempt)
         try:
             runtime.assert_active()
         except Exception as error:
@@ -768,9 +780,10 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
                 from .policy_graph import execute_policy_graph
                 output = await classify_policy_output(policy, request_inspection_text(workflow, messages), ingress, env, runtime, client)
                 runtime.assert_active()
+                observe('policy_validated')
                 if expected_policy_fields is not None:
                     result['policyFieldChecks'] = check_policy_fields(output, expected_policy_fields)
-                selected = execute_policy_graph(routing['graph'], output)
+                selected = execute_policy_graph(routing['graph'], output, **({'on_step': lambda step: observe('policy_step', step)} if inspection is not None else {}))
                 route = selected['route']
                 result.update(policyRoute=route['action'], policyPath=selected['path'])
                 node_by_id = {node['id']: node for node in routing['graph']['nodes']}
@@ -815,6 +828,7 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
             # check passes. It never falls back to Main or enters repair retries.
             output = route['responseText']
             attempt = 1 if retry_enabled else None
+            observe('response', output, attempt)
             post_started = time.monotonic()
             post = await stage_run(workflow['post'], 'post', output, attempt)
             if retry_enabled:
@@ -842,6 +856,7 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
         if retry_enabled:
             result['regenerationCount'] = number - 1
         await progress('main', 'main', 'running', attempt=attempt)
+        observe('main_input', generation_messages, attempt)
         try:
             runtime.assert_active()
             if 'mockResponse' in options:
@@ -857,6 +872,7 @@ async def execute_workflow(workflow: dict, connections: list[dict], ingress: dic
                 generated = await model_chat(main, ingress, env, generation_messages, options, runtime, client)
                 output, finish_reason, usage = generated['content'], generated['finishReason'], generated.get('usage')
             result['finishReason'] = finish_reason
+            observe('response', output, attempt)
             if usage is None:
                 complete_usage = False
             else:

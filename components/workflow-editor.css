@@ -318,5 +318,51 @@
 .app-shell .we-inspector-node-results small{font-size:10px;color:#7c8ea3}
 .app-shell .we-field-error{display:block;margin:5px 0 0;color:#a04840;font-size:11px;line-height:1.5}
 .app-shell .we-inspector [aria-invalid=true]{border-color:#c77369}
+
+/* The canvas owns a stable viewport. Inspectors and results float above it. */
+.app-shell .we-layout.with-inspector{grid-template-columns:minmax(0,1fr)}
+.app-shell .we-layout.with-runner{height:clamp(600px,calc(100vh - 260px),760px);min-height:600px}
+.app-shell .we-canvas-workspace{position:relative;display:block;min-width:0;min-height:0;overflow:hidden}
+.app-shell .we-canvas-workspace>.wc-shell{height:100%;min-height:0}
+.app-shell .we-inspector{position:absolute;z-index:30;inset:0 0 0 auto;width:420px;max-width:calc(100% - 18px);height:100%;box-shadow:-8px 0 26px #1b263b12}
+.app-shell .we-panel-backdrop{z-index:29}
+.app-shell .we-run-dock{position:absolute;z-index:18;bottom:0;left:0;right:0;box-shadow:0 -5px 20px #283c5310}
+.app-shell .we-run-dock-body{max-height:min(360px,48vh);overscroll-behavior:contain}
+.app-shell .we-run-dock.expanded.open{height:calc(100% - 12px);display:flex;flex-direction:column}
+.app-shell .we-run-dock.expanded.open .we-run-dock-head{flex:none}
+.app-shell .we-run-dock.expanded.open .we-run-dock-body{flex:1;min-height:0;max-height:none}
+.app-shell .we-run-expand{flex:none;font-size:11px;min-height:28px;padding:4px 7px}
+.app-shell .we-inspector-tabs{display:flex;flex:none;gap:3px;padding:7px 16px;border-bottom:1px solid var(--we-line);background:#fafbfd}
+.app-shell .we-inspector-tabs>button{display:flex;align-items:center;justify-content:center;gap:8px;flex:1;min-height:35px;border:0;border-radius:6px;background:transparent;color:#687b90;font-size:12px}
+.app-shell .we-inspector-tabs>button[aria-selected=true]{background:#fff;color:#434e9a;box-shadow:0 1px 4px #182d4c10}
+.app-shell .we-inspector-tabs>button span{font-size:10px;color:#7c899a}
+.app-shell .we-inspector-scroll [role=tabpanel][hidden]{display:none}
+.app-shell .we-inspector-body .field{gap:6px;margin-bottom:15px}
+.app-shell .we-inspector-body .field input,.app-shell .we-inspector-body .field select{min-height:36px;padding:7px 9px}
+.app-shell .we-inspector-node{padding-top:16px;padding-bottom:14px}
+.app-shell .we-node-name-input{box-sizing:border-box;width:100%;min-width:0;min-height:32px;padding:4px 7px;border:1px solid #e0e6ef;border-radius:5px;background:#fff;color:#334b63;font-family:inherit;font-size:13px;font-weight:600;line-height:1.6}
+.app-shell .we-node-advanced{margin:16px 0;border:1px solid #e5eaf1;border-radius:7px;padding:0 12px;color:#68798e;font-size:12px;line-height:1.7}
+.app-shell .we-node-advanced>summary{padding:10px 0;cursor:pointer;font-size:12px;font-weight:500;color:#536a81}
+.app-shell .we-node-advanced[open]>.field:first-of-type,.app-shell .we-node-advanced .we-advanced-body{padding-top:8px}
+.app-shell .we-node-advanced .we-section-title:first-child{margin-top:0;padding-top:9px;border-top:0}
+.app-shell .we-node-advanced .we-execution-move{margin:15px 0}
+.app-shell .we-layout-tools{margin:0 20px 20px}
+.app-shell .we-node-inspection{padding-top:18px}
+.app-shell .we-node-inspection h3{margin:0 0 15px;font-size:14px;color:#374b62}
+.app-shell .we-inspection-attempt{margin:12px 0 18px;padding:12px;border:1px solid #e2e8ef;border-radius:8px;background:#fff;font-size:12px;line-height:1.75;overflow-wrap:anywhere}
+.app-shell .we-inspection-attempt>header{display:flex;flex-wrap:wrap;gap:5px 12px;align-items:center;color:#718299}
+.app-shell .we-inspection-attempt>header strong{color:#476279}
+.app-shell .we-inspection-attempt p{margin:9px 0}
+.app-shell .we-inspection-value{margin:12px 0;padding:10px;border-radius:6px;background:#f7f9fc}
+.app-shell .we-inspection-value>strong{font-size:12px;color:#435d78}
+.app-shell .we-inspection-value p{margin:5px 0;color:#6a7e92}
+.app-shell .we-inspection-meta{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:#7b8ca0}
+.app-shell .we-node-inspection pre{max-height:220px;overflow:auto;margin:9px 0 0;padding:10px;background:#fff;border:1px solid #e2e8f0;border-radius:5px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:11px;line-height:1.75}
+.app-shell .we-inspection-stale{padding:10px;border:1px solid #ebdfc4;border-radius:6px;background:#fffbf3;font-size:12px;color:#8a723e}
+.app-shell .we-inspection-empty{padding-top:24px;font-size:12px;line-height:1.8;color:#718299}
+.app-shell .we-inspection-route code{padding:2px 4px;background:#f2f5fa;border-radius:3px}
+.app-shell .we-execution-details-link{display:inline-flex;align-items:center;gap:4px;margin-top:7px;padding:2px 0;border:0;background:transparent;color:#71839b;font-size:12px}
+@media(max-width:1050px){.app-shell .we-layout.with-runner{height:600px;min-height:600px}}
+@media(max-width:700px){.app-shell .we-layout.with-runner{height:560px;min-height:560px}.app-shell .we-run-dock.open{inset:0;height:100%;display:flex;flex-direction:column}.app-shell .we-run-dock.open .we-run-dock-body{flex:1;min-height:0;max-height:none}.app-shell .we-run-dock-head{flex-wrap:wrap;padding:5px 10px}.app-shell .we-run-dock-toggle strong{font-size:12px}.app-shell .we-run-expand{display:none}.app-shell .we-run-dock.expanded.open{height:100%}}
 .app-shell .we-policy-creation{display:flex;flex-direction:column;gap:10px}
 .app-shell .we-policy-creation>p{font-size:11px;line-height:1.7}

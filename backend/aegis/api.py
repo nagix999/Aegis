@@ -38,6 +38,7 @@ from .dashboard import aggregate_dashboard
 from .policies import classify_policy, classify_policy_output, policy_output_schema
 from .store import UNSET
 from .runtime import ExecutionRuntime, js_length, response_token_reservation, execution_lease_duration
+from .console_inspection import ConsoleInspection
 
 
 def now_iso() -> str:
@@ -314,7 +315,7 @@ def create_router(store, env: dict) -> APIRouter:
             {"in": "query", "name": "status", "schema": {"type": "string", "enum": ["allow", "block", "error", "running", "completed", "cancelled"]}, "description": "history=true 검증 조회에는 running, completed, cancelled, error 상태를 사용합니다. dashboard 또는 logs의 요청 판정입니다. 생략하면 모든 판정을 포함합니다. 대시보드의 검증 결과와 현재 배포에는 적용하지 않습니다."},
         ],
     })
-    @router.post("/api/console", tags=["Console"], operation_id="console_action", openapi_extra={"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["action"], "properties": {"action": {"type": "string", "description": "save_policy, test_policy, save_workflow, playground, start_evaluation, publish 등의 관리 작업"}, "workflowId": {"type": "string"}, "workflow": {"type": "object"}, "dataset": {"type": "object"}, "connection": {"type": "object"}, "policy": {"oneOf": [{"$ref": "#/components/schemas/PolicyDefinition"}, {"$ref": "#/components/schemas/KeyPolicy"}], "description": "save_policy와 test_policy는 PolicyDefinition, API 키 관리 작업은 KeyPolicy를 사용합니다."}, "expectedVersion": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "save_policy의 현재 최신 버전. 신규 정책은 0입니다."}, "idempotencyKey": {"type": "string"}}, "additionalProperties": True}, "examples": {"playground": {"value": {"action": "playground", "workflowId": "wf-support", "input": "배송은 얼마나 걸리나요?"}}, "publish": {"value": {"action": "publish", "workflowId": "wf-support", "idempotencyKey": "example-unique-publish"}}}}}}})
+    @router.post("/api/console", tags=["Console"], operation_id="console_action", openapi_extra={"requestBody": {"required": True, "content": {"application/json": {"schema": {"type": "object", "required": ["action"], "properties": {"action": {"type": "string", "description": "save_policy, test_policy, save_workflow, playground, start_evaluation, publish 등의 관리 작업"}, "workflowId": {"type": "string"}, "workflow": {"type": "object"}, "dataset": {"type": "object"}, "connection": {"type": "object"}, "policy": {"oneOf": [{"$ref": "#/components/schemas/PolicyDefinition"}, {"$ref": "#/components/schemas/KeyPolicy"}], "description": "save_policy와 test_policy는 PolicyDefinition, API 키 관리 작업은 KeyPolicy를 사용합니다."}, "expectedVersion": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "save_policy의 현재 최신 버전. 신규 정책은 0입니다."}, "inspect": {"type": "boolean", "description": "playground에서 관리자에게만 일시적인 노드 실행 상세를 반환합니다. result와 분리된 inspection이며 로그나 검증 기록에 저장하지 않습니다."}, "idempotencyKey": {"type": "string"}}, "additionalProperties": True}, "examples": {"playground": {"value": {"action": "playground", "workflowId": "wf-support", "input": "배송은 얼마나 걸리나요?"}}, "publish": {"value": {"action": "publish", "workflowId": "wf-support", "idempotencyKey": "example-unique-publish"}}}}}}})
     @router.api_route("/api/console", methods=["PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"], include_in_schema=False)
     async def console(request: Request):
         try:
@@ -542,6 +543,7 @@ def create_router(store, env: dict) -> APIRouter:
                     require(await store.put_if_unchanged("model_metric" if metrics else "diagnostic", connection["id"], result, checks), "검사 중 모델 서버 설정이나 접근 정책이 변경되었습니다. 다시 검사하세요.", "connection_changed", 409)
                     extra["modelMetric" if metrics else "diagnostic"] = result
             elif action == "playground":
+                require("inspect" not in data or isinstance(data["inspect"], bool), "노드 실행 상세 설정을 확인하세요.")
                 messages = validate_payload("conversation", data["messages"]) if "messages" in data else [{"role": "user", "content": text(data.get("input"), 16000, trim=False)}]
                 if "messages" not in data:
                     require(messages[0]["content"].strip(), "입력에는 공백 외의 문자가 필요합니다.")
@@ -555,11 +557,17 @@ def create_router(store, env: dict) -> APIRouter:
                 fingerprint = configuration_fingerprint(workflow, connections)
                 if "expectedFingerprint" in data:
                     require(fingerprint_value(data["expectedFingerprint"]) == fingerprint, "실행할 워크플로우가 변경되었습니다. 현재 설정을 다시 확인하세요.", "stale_workflow_execution", 409)
+                inspection = ConsoleInspection(workflow, messages) if data.get("inspect") and role == "admin" else None
                 if data.get("progress"):
-                    return progress_response(request, workflow, connections, state["ingress"], messages, options, fingerprint, version, actor)
-                result = await execute_attached(request, workflow, connections, state["ingress"], env, messages, options, client=env.get("_client"))
+                    return progress_response(request, workflow, connections, state["ingress"], messages, options, fingerprint, version, actor, inspection)
+                result = await execute_attached(request, workflow, connections, state["ingress"], env, messages, options, client=env.get("_client"), **({"inspection": inspection} if inspection is not None else {}))
                 await store.log(record_log(result, "playground", workflow, version))
                 extra.update(result=result, fingerprint=fingerprint)
+                if inspection is not None:
+                    try:
+                        extra["inspection"] = inspection.finalize(result)
+                    except Exception:
+                        pass  # Optional console details cannot invalidate a result.
             elif action in {"publish", "rollback_deployment"}:
                 if action == "publish":
                     workflow, connections, checks = await capture_workflow(store, identifier(data.get("workflowId")))
@@ -628,7 +636,7 @@ def create_router(store, env: dict) -> APIRouter:
         except Exception as error:
             return error_response(error)
 
-    def progress_response(request, workflow, connections, ingress, messages, options, fingerprint, version, actor):
+    def progress_response(request, workflow, connections, ingress, messages, options, fingerprint, version, actor, inspection=None):
         async def stream():
             queue = asyncio.Queue(maxsize=2008)
             cancel = asyncio.Event()
@@ -639,10 +647,16 @@ def create_router(store, env: dict) -> APIRouter:
                     pass
             async def execute():
                 try:
-                    result = await execute_workflow(workflow, connections, ingress, env, messages, options, on_progress=progress, cancel_event=cancel, client=env.get("_client"))
+                    result = await execute_workflow(workflow, connections, ingress, env, messages, options, on_progress=progress, cancel_event=cancel, client=env.get("_client"), **({"inspection": inspection} if inspection is not None else {}))
                     await store.log(record_log(result, "playground", workflow, version))
                     await store.audit({"id": str(uuid.uuid4()), "actor": actor, "action": "playground", "target": workflow["id"], "createdAt": now_iso(), "detail": "완료"})
-                    await queue.put({"type": "result", "result": result, "fingerprint": fingerprint})
+                    terminal = {"type": "result", "result": result, "fingerprint": fingerprint}
+                    if inspection is not None:
+                        try:
+                            terminal["inspection"] = inspection.finalize(result)
+                        except Exception:
+                            pass
+                    await queue.put(terminal)
                 except asyncio.CancelledError:
                     raise
                 except Exception:

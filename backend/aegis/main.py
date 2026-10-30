@@ -68,7 +68,7 @@ def create_app(overrides: dict | None = None, *, store=None) -> FastAPI:
                 if owned_store:
                     await storage.close()
 
-    app = FastAPI(title="Aegis Gateway API", version="3.6.0", lifespan=lifespan,
+    app = FastAPI(title="Aegis Gateway API", version="3.7.0", lifespan=lifespan,
                   description="요청 검사와 응답 검사, 워크플로우 검증 및 OpenAI 형식 Gateway")
     app.state.store, app.state.env = storage, env
     app.state.auth_service = auth

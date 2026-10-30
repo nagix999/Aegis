@@ -224,6 +224,11 @@
 .app-shell .wc-node[data-kind="policy-action"]{--node-fill:#a7c9bc;--node-glyph:#375c4e}
 .app-shell .wc-status.policy{top:-2px;right:18px;width:auto;min-width:27px;height:18px;padding:1px 5px;border:1px solid #cbd9e6;border-radius:4px;background:#f0f5fa;color:#526e89;font-size:9px;font-weight:500}
 .app-shell .wc-status.policy::before{display:none}
+
+.app-shell .wc-inspect-status{right:auto;cursor:pointer;padding:0;touch-action:manipulation;z-index:5}
+.app-shell .wc-inspect-status:focus-visible{outline:2px solid #7396bb;outline-offset:3px}
+.app-shell .wc-node-title{font-weight:600;color:#283e55}
+.app-shell .wc-toolbar .wc-view-controls{row-gap:4px}
 .app-shell .wc-graph-port.policy-port{z-index:4}
 .app-shell .wc-graph-port.policy-port small{position:absolute;white-space:nowrap;font-size:9px;line-height:12px;color:#6c7a8c;pointer-events:none}
 .app-shell .wc-connection[data-execution-state="unconfirmed"] .wc-edge{stroke:#94a5b9;stroke-width:1.4;stroke-dasharray:2 5}

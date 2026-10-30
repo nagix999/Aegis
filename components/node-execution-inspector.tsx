@@ -1,0 +1,24 @@
+'use client';
+
+import type { ConsoleExecutionInspection, ConsoleInspectionValue, ConsoleNodeInspection, ExecutionResult, Trace, Workflow } from '@/lib/aegis-types';
+import { inspectionForNode, inspectionPortLabel, inspectionValueText } from '@/lib/node-inspection-view';
+
+const statuses={completed:'완료',block:'차단',error:'오류',skipped:'실행 안 함'};
+const scopes={conversation:'전체 대화',user_messages:'사용자 메시지 전체',last_user:'마지막 사용자 질문'};
+
+function InspectionValue({label,value,inspection,result,node}:{label:string;value:ConsoleInspectionValue;inspection:ConsoleExecutionInspection;result:ExecutionResult;node:ConsoleNodeInspection}) {
+  const text=inspectionValueText(value,inspection,result,node);
+  return <section className="we-inspection-value" aria-label={`노드 ${label}`}><strong>{label}</strong><p>{value.summary}</p><div className="we-inspection-meta"><span>{value.type==='messages'?'대화':value.type==='json'?'JSON':value.type==='text'?'텍스트':value.type==='status'?'처리 상태':'해당 없음'}</span>{value.length!==undefined&&<span>{value.length.toLocaleString()}자</span>}{value.messageCount!==undefined&&<span>메시지 {value.messageCount}개</span>}{value.availability==='withheld'&&<span>비공개</span>}</div>{text!==undefined&&<pre tabIndex={0}>{text||'(빈 값)'}</pre>}</section>;
+}
+
+export function NodeExecutionInspector({nodeId,label,workflow,result,inspection,attempt,onAttempt,stale}:{nodeId:string;label:string;workflow:Workflow;result?:ExecutionResult;inspection?:ConsoleExecutionInspection;attempt?:number;onAttempt:(attempt?:number)=>void;stale:boolean}) {
+  if(!result)return <div className="we-inspector-body we-inspection-empty"><strong>아직 실행한 결과가 없습니다.</strong><p>실행과 결과에서 질문이나 데이터셋을 실행한 뒤 이 노드의 내역을 확인하세요.</p></div>;
+  const nodes=inspectionForNode(inspection,nodeId,attempt);
+  const traces=result.traces.filter(trace=>nodeId==='main'?trace.stage==='main':nodeId==='policy'?trace.ruleId==='policy':nodeId.startsWith('policy-node:')?trace.ruleId===`policy:${nodeId.slice(12)}`:nodeId.startsWith('rule:')?trace.ruleId===nodeId.slice(5):nodeId.startsWith('group:')?trace.groupId===nodeId.slice(6):false).filter(trace=>trace.stage==='pre'||attempt===undefined||(trace.attempt??1)===attempt);
+  const attempts=[...new Set([...(inspection?.nodes??[]).map(node=>node.attempt??1),...(result.attempts??[]).map(item=>item.number),...result.traces.map(trace=>trace.attempt??1)])].sort((a,b)=>a-b);
+  return <div className="we-inspector-body we-node-inspection"><h3>{label}</h3>{stale&&<p className="we-inspection-stale" role="status">설정 변경 전 결과입니다. 현재 초안으로 다시 실행해 확인하세요.</p>}{attempts.length>1&&<label className="field">실행 회차<select aria-label="노드 실행 회차" value={attempt??''} onChange={event=>onAttempt(event.target.value?Number(event.target.value):undefined)}><option value="">전체 회차</option>{attempts.map(value=><option key={value} value={value}>{value===1?'최초 실행':`재작성 ${value-1}회`}</option>)}</select></label>}
+    {nodes.length&&inspection?<>{inspection.truncated&&<p role="status">상세 표시 한도에 도달해 일부 내역을 생략했습니다.</p>}{nodes.map((node,index)=><article className="we-inspection-attempt" key={`${node.nodeId}:${node.attempt??1}:${index}`}><header><strong>{statuses[node.status]}</strong><span>{node.stage==='pre'?'요청 검사':node.stage==='post'?'응답 검사':node.stage==='main'?'응답 생성':'응답 반환'}{node.attempt?` / ${node.attempt}회차`:''}</span>{node.latencyMs!==undefined&&<span>{node.latencyMs.toLocaleString()}ms</span>}</header>{node.skipReason&&<p>{node.skipReason}</p>}{node.schemaValid!==undefined&&<p>출력 스키마: {node.schemaValid?'검증 통과':'검증 실패'}</p>}{node.stage==='pre'&&<p>요청 검사 범위: {scopes[inspection.request.inputScope]}</p>}<InspectionValue label="입력" value={node.input} inspection={inspection} result={result} node={node}/><InspectionValue label="출력" value={node.output} inspection={inspection} result={result} node={node}/>{node.selectedPort&&<p className="we-inspection-route">선택 경로: <code>{inspectionPortLabel(workflow,nodeId,node.selectedPort,stale)}</code></p>}{Boolean(node.selectedEdgeIds?.length)&&<details><summary>선택한 연결 {node.selectedEdgeIds!.length}개</summary><ul>{node.selectedEdgeIds!.map(id=><li key={id}><code>{id}</code></li>)}</ul></details>}</article>)}</>:<><p className="we-fine">이 기록에는 콘솔 전용 입출력 상세가 없습니다. 현재 초안으로 질문을 다시 실행하면 상세를 확인할 수 있습니다.</p>{traces.length?traces.map((trace,index)=><TraceSummary trace={trace} key={index}/>):<p>해당 노드의 실행 기록이 없습니다. 선택되지 않은 경로이거나 앞선 노드에서 실행이 종료되었을 수 있습니다.</p>}{nodeId==='input'&&<p>입력은 실행과 결과의 요청 확인에서 볼 수 있습니다.</p>}{nodeId==='output'&&<><p>{result.status==='allow'?'검사를 통과한 최종 응답입니다.':'차단 또는 오류로 생성된 답변을 반환하지 않았습니다.'}</p>{result.status==='allow'&&<pre>{result.output}</pre>}</>}</>}
+  </div>;
+}
+
+function TraceSummary({trace}:{trace:Trace}) {return <article className="we-inspection-attempt"><header><strong>{trace.status==='allow'?'통과':trace.status==='block'?'차단':trace.status==='error'?'오류':'실행 안 함'}</strong><span>{trace.attempt??1}회차 / {trace.latencyMs}ms</span></header><p>{trace.reason}</p></article>;}

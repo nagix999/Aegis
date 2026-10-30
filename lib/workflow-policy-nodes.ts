@@ -38,7 +38,7 @@ export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:st
   const next = structuredClone(workflow), graph = next.policyRouting?.graph;
   if (!graph || next.policyRouting?.policy.formatVersion !== 2) throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
   const source=graph.nodes.find(node=>node.id===from), target=graph.nodes.find(node=>node.id===to);
-  if (!source || !target || from===to || !policyNodePorts(source).some(item=>item.port===port)) throw new Error('분기 노드의 출력 경로를 선택하세요.');
+  if (!source || !target || from===to || !['branch','rule','switch'].includes(source.kind) || !policyNodePorts(source).some(item=>item.port===port)) throw new Error('분기 노드의 출력 경로를 선택하세요.');
   if (!['branch','rule','switch','action'].includes(target.kind)) throw new Error('분기 다음에는 조건 분기, Switch 분기 또는 액션을 연결하세요.');
   const previous = graph.edges.find(edge=>edge.from===from&&edge.port===port);
   if(!previous&&edgeId!==undefined&&(!validId(edgeId)||graph.edges.some(edge=>edge.id===edgeId)))throw new Error('새 정책 연결선의 ID를 확인하세요.');

@@ -95,6 +95,7 @@ def run_question(page, text):
                               and response.request.post_data_json.get('action') == 'playground') as pending:
         page.get_by_role('button', name='질문 실행', exact=True).click()
     response = pending.value
+    response.finished()
     assert response.status == 200, response.text()
     events = [json.loads(line) for line in response.text().splitlines() if line.strip()]
     result = next(event['result'] for event in events if event['type'] == 'result')

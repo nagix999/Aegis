@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { AlignLeft, Boxes, BrainCircuit, Braces, Check, CheckSquare, FileJson, GitBranch, Layers3, LayoutGrid, ListChecks, LogIn, LogOut, Maximize2, Merge, Minus, Plus, RefreshCw, Regex, Search, Settings2, ShieldCheck, Split, SquareDashed, X, Zap } from 'lucide-react';
-import type { CanvasZone, Connection, ExecutionResult, PolicyGraphNode, Workflow, WorkflowProgressEvent } from '@/lib/aegis-types';
+import type { CanvasZone, Connection, ConsoleExecutionInspection, ExecutionResult, PolicyGraphNode, Workflow, WorkflowProgressEvent } from '@/lib/aegis-types';
 import { autoLayout, createZoneForNodes, executionEndpointKey, layoutBounds, moveNodes, moveZoneLayout, nodeDefinitions, resolveLayout, visibleLayoutKey, zoneFrames, NODE_HEIGHT, NODE_WIDTH, NODE_ICON_SIZE, NODE_ICON_CENTER_Y, nodePort, ZONE_MIN_WIDTH, ZONE_MIN_HEIGHT, ZONE_SIZE_LIMIT, type WorkflowSelection, type CanvasZoneFrame, type CanvasNode, type CanvasPositions } from '@/lib/workflow-layout';
 import { ruleKindLabels } from '@/lib/node-catalog';
 import { connectionLabel } from '@/lib/product-copy';
@@ -20,9 +20,10 @@ export type CanvasBranchEligibility = {parallel:{valid:boolean;reason?:string};c
 
 export type WorkflowCanvasProps = {
   workflow: Workflow; connections: Connection[]; selection?: WorkflowSelection; disabled: boolean; readOnly?: boolean;
-  execution?: ExecutionResult; progress?: WorkflowProgressEvent[]; running?: boolean; executionAttempt?: number; stale: boolean;
+  inspection?: ConsoleExecutionInspection; execution?: ExecutionResult; progress?: WorkflowProgressEvent[]; running?: boolean; executionAttempt?: number; stale: boolean;
   onSelect: (selection: WorkflowSelection) => void; onLayout: (positions: CanvasPositions, zones?: CanvasZone[]) => void;
   onSearchSelect?: (selection: WorkflowSelection) => void;
+  onInspect?: (selection: WorkflowSelection) => void;
   selectedKeys?: string[];
   onSelectedKeys?: (keys: string[]) => void;
   onGroupSelection?: () => void;
@@ -32,6 +33,7 @@ export type WorkflowCanvasProps = {
   onCompleteZoneSelection?: () => void;
   onCreateFromPort?: (source:CanvasPortCreationSource) => void;
   autoFitRequest?: number;
+  onAutoFitConsumed?:(request:number)=>void;
   onAddZone?: () => void;
   onAddNode?: (zoneId?: string) => void;
   onInsertNode?: (target: FlowInsertTarget, position?: { x: number; y: number }) => void;
@@ -62,7 +64,7 @@ type CanvasEdge = Omit<WorkflowCanvasLink,'id'> & { id?: string; kind: 'flow' | 
 type ZoneDrag = { pointerId: number; id: string; x: number; y: number; scrollX: number; scrollY: number; positions: CanvasPositions; zones: CanvasZone[]; mode: 'move' | 'resize'; moved: boolean };
 type Pan = { pointerId: number; x: number; y: number; scrollX: number; scrollY: number; native: boolean; moved: boolean };
 type Drag = { pointerId: number; key: string; keys: string[]; x: number; y: number; positions: CanvasPositions; scrollX: number; scrollY: number; moved: boolean };
-export function WorkflowCanvas({ workflow, connections, selection, disabled: interactionDisabled, readOnly = false, execution, progress, running = false, executionAttempt, stale, onSelect, onSearchSelect, onLayout, onAdd, onRetry, onBackgroundSelect, onConnect, onSelectEdge, onPolicyConnect, onCreatePolicyFromPort, onSelectPolicyEdge, onInsertNode, onBuildBranch, branchEligibility, notify, selectedKeys = [], onSelectedKeys, onGroupSelection, zoneSelectionIssue, zoneCompletionKeys = [], zoneCompletionIssue, onCompleteZoneSelection, onCreateFromPort, autoFitRequest, onAddZone, onAddNode, connectionImpact, focusRequest, initialViewport, onViewportChange }: WorkflowCanvasProps) {
+export function WorkflowCanvas({ workflow, connections, selection, disabled: interactionDisabled, readOnly = false, execution, inspection, progress, running = false, executionAttempt, stale, onSelect, onSearchSelect, onInspect, onLayout, onAdd, onRetry, onBackgroundSelect, onConnect, onSelectEdge, onPolicyConnect, onCreatePolicyFromPort, onSelectPolicyEdge, onInsertNode, onBuildBranch, branchEligibility, notify, selectedKeys = [], onSelectedKeys, onGroupSelection, zoneSelectionIssue, zoneCompletionKeys = [], zoneCompletionIssue, onCompleteZoneSelection, onCreateFromPort, autoFitRequest, onAutoFitConsumed, onAddZone, onAddNode, connectionImpact, focusRequest, initialViewport, onViewportChange }: WorkflowCanvasProps) {
   const disabled = interactionDisabled || readOnly;
   const nodes = useMemo(() => nodeDefinitions(workflow), [workflow]);
   const positions = useMemo(() => resolveLayout(workflow), [workflow]);
@@ -74,6 +76,12 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const [zoom, setZoom] = useState(()=>initialViewport&&Number.isFinite(initialViewport.zoom)?Math.max(.005,Math.min(1.5,initialViewport.zoom)):1);
   const [fitRevision,setFitRevision]=useState(0);
   const fitActive=useRef(false);
+  const viewCommand=useRef(0);
+  const pendingFit=useRef<number|undefined>(undefined);
+  const lastAutoFit=useRef<number|undefined>(undefined);
+  const consumedFitCallback=useRef(onAutoFitConsumed);consumedFitCallback.current=onAutoFitConsumed;
+  const previousViewport=useRef<CanvasViewport | undefined>(undefined);
+  const [canRestoreViewport,setCanRestoreViewport]=useState(false);
   const [announcement, setAnnouncement] = useState('');
   const [searchOpen,setSearchOpen]=useState(false);
   const [searchQuery,setSearchQuery]=useState('');
@@ -132,7 +140,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const retry = workflow.responseRetry?.enabled === true;
   const maxRetries = workflow.responseRetry?.maxRetries ?? 1;
   const structure = nodes.map(node => node.key).join('|');
-  const executionView = useMemo(() => workflowExecutionView(workflow,{execution,progress,running,stale,executionAttempt}),[workflow,execution,progress,running,stale,executionAttempt]);
+  const executionView = useMemo(() => workflowExecutionView(workflow,{execution,inspection,progress,running,stale,executionAttempt}),[workflow,execution,inspection,progress,running,stale,executionAttempt]);
   const selectedNode=nodes.find(node=>selected(node,selection));
   const focusedPath=useMemo(()=>pathFocus&&selectedNode&&!connectionImpact&&!wirePreview&&!linkSource&&!policySource?workflowPathFocus(workflow,selectedNode.key):undefined,[workflow,pathFocus,selectedNode?.key,connectionImpact,wirePreview,linkSource,policySource]);
 
@@ -201,45 +209,47 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   }, [workflow.id]);
   useEffect(()=>{reportViewport();},[zoom]);
   useEffect(()=>{
-    if(!autoFitRequest&&!fitRevision)return;
+    if(lastAutoFit.current!==autoFitRequest){lastAutoFit.current=autoFitRequest;if(autoFitRequest)pendingFit.current=++viewCommand.current;}
+    const command=pendingFit.current;
+    if(command===undefined||command!==viewCommand.current)return;
     const mountedViewport=viewport.current;if(!mountedViewport)return;
     const element:HTMLDivElement=mountedViewport;
     let frame:number|undefined,disposed=false;
     fitActive.current=true;
     function scheduleFit(){
-      if(disposed||!fitActive.current)return;
+      if(disposed||!fitActive.current||command!==viewCommand.current)return;
       if(frame!==undefined)cancelAnimationFrame(frame);
       frame=requestAnimationFrame(()=>{
-        if(disposed||!fitActive.current)return;
+        if(disposed||!fitActive.current||command!==viewCommand.current)return;
         const current=fitLatest.current;
         if(current.workflowId!==workflow.id||element.clientWidth<=24||element.clientHeight<=24)return;
         const nextZoom=Math.max(.005,Math.min(1.25,(element.clientWidth-24)/current.bounds.width,(element.clientHeight-24)/current.bounds.height));
         setZoom(nextZoom);
         frame=requestAnimationFrame(()=>{
-          if(disposed||!fitActive.current)return;
+          if(disposed||!fitActive.current||command!==viewCommand.current)return;
           const latest=fitLatest.current;
           if(latest.workflowId!==workflow.id)return;
           element.scrollLeft=Math.max(0,(latest.bounds.width*nextZoom-element.clientWidth)/2);
           element.scrollTop=Math.max(0,(latest.bounds.height*nextZoom-element.clientHeight)/2);
           viewportCallback.current?.({scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom:nextZoom});
-          frame=undefined;
+          frame=undefined;pendingFit.current=undefined;
+          if(autoFitRequest)consumedFitCallback.current?.(autoFitRequest);
         });
       });
     }
     scheduleFit();
-    // Opening a node's settings or the execution dock can resize the canvas in
-    // the same update. Fit to its final client size rather than a guessed delay.
-    const observer=typeof ResizeObserver==='undefined'?undefined:new ResizeObserver(scheduleFit);
-    observer?.observe(element);
-    return()=>{disposed=true;observer?.disconnect();if(frame!==undefined)cancelAnimationFrame(frame);};
+    // A fit is a single view command. Later panel and result changes must not
+    // take ownership of the user's zoom or scroll position.
+    return()=>{disposed=true;if(frame!==undefined)cancelAnimationFrame(frame);};
   },[autoFitRequest,fitRevision,workflow.id]);
   useEffect(()=>{
     if(!focusRequest)return;
     const key=endpointKey(focusRequest.stage,focusRequest.endpoint),position=visible[key];
     if(!position)return;
+    const command=++viewCommand.current;fitActive.current=false;consumeAutoFit();
     const frame=requestAnimationFrame(()=>{
       const element=viewport.current;
-      if(!element)return;
+      if(!element||command!==viewCommand.current)return;
       element.scrollLeft=Math.max(0,(position.x+NODE_WIDTH/2+bounds.offsetX)*zoom-element.clientWidth/2);
       element.scrollTop=Math.max(0,(position.y+NODE_HEIGHT/2+bounds.offsetY)*zoom-element.clientHeight/2);
       [...element.querySelectorAll<HTMLElement>('[data-layout-key]')].find(node=>node.dataset.layoutKey===key)?.focus({preventScroll:true});
@@ -262,7 +272,8 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   }
   function closeSearch(returnFocus=false){setSearchOpen(false);if(returnFocus)searchTrigger.current?.focus();}
   function focusSearchResult(result:WorkflowSearchResult){
-    fitActive.current=false;
+    rememberViewport();
+    const command=++viewCommand.current;fitActive.current=false;consumeAutoFit();
     const node=nodes.find(candidate=>candidate.key===result.key),position=node&&visible[node.key];
     if(!node||!position){setAnnouncement('검색한 노드가 변경되었습니다. 다시 검색하세요.');return;}
     const nextZoom=Math.max(1,Math.min(1.5,zoom));
@@ -271,7 +282,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     if(searchMoveFrame.current!==undefined)cancelAnimationFrame(searchMoveFrame.current);
     searchMoveFrame.current=requestAnimationFrame(()=>{
       const current=searchView.current,currentNode=current.nodes.find(candidate=>candidate.key===node.key),currentPosition=currentNode&&current.visible[currentNode.key];
-      const element=viewport.current;if(!element||current.workflowId!==workflow.id||!currentNode||!currentPosition){searchMoveFrame.current=undefined;return;}
+      const element=viewport.current;if(!element||command!==viewCommand.current||current.workflowId!==workflow.id||!currentNode||!currentPosition){searchMoveFrame.current=undefined;return;}
       element.scrollLeft=Math.max(0,(currentPosition.x+NODE_WIDTH/2+current.bounds.offsetX)*nextZoom-element.clientWidth/2);
       element.scrollTop=Math.max(0,(currentPosition.y+NODE_HEIGHT/2+current.bounds.offsetY)*nextZoom-element.clientHeight/2);
       const modal=element.closest('.we-layout')?.querySelector('[aria-modal="true"]');
@@ -430,7 +441,38 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     if (suppressBackgroundClick.current) { suppressBackgroundClick.current = false; return; }
     onBackgroundSelect?.();
   }
-  function fit() {setFitRevision(value=>value+1);}
+  function consumeAutoFit() {pendingFit.current=undefined;if(autoFitRequest)consumedFitCallback.current?.(autoFitRequest);}
+  function rememberViewport() {
+    const element=viewport.current;if(!element)return;
+    previousViewport.current={scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom};setCanRestoreViewport(true);
+  }
+  function setViewZoom(nextZoom:number) {
+    const element=viewport.current;if(!element)return;
+    rememberViewport();const command=++viewCommand.current;fitActive.current=false;consumeAutoFit();
+    const center={x:(element.scrollLeft+element.clientWidth/2)/zoom,y:(element.scrollTop+element.clientHeight/2)/zoom};
+    setZoom(nextZoom);
+    if(searchMoveFrame.current!==undefined)cancelAnimationFrame(searchMoveFrame.current);
+    searchMoveFrame.current=requestAnimationFrame(()=>{
+      if(command!==viewCommand.current)return;
+      element.scrollLeft=Math.max(0,center.x*nextZoom-element.clientWidth/2);element.scrollTop=Math.max(0,center.y*nextZoom-element.clientHeight/2);
+      viewportCallback.current?.({scrollLeft:element.scrollLeft,scrollTop:element.scrollTop,zoom:nextZoom});searchMoveFrame.current=undefined;
+    });
+  }
+  function restoreView() {
+    const saved=previousViewport.current,element=viewport.current;if(!saved||!element)return;
+    const command=++viewCommand.current;fitActive.current=false;consumeAutoFit();setZoom(saved.zoom);setCanRestoreViewport(false);previousViewport.current=undefined;
+    if(searchMoveFrame.current!==undefined)cancelAnimationFrame(searchMoveFrame.current);
+    searchMoveFrame.current=requestAnimationFrame(()=>{
+      if(command!==viewCommand.current)return;
+      element.scrollLeft=saved.scrollLeft;element.scrollTop=saved.scrollTop;viewportCallback.current?.({...saved});searchMoveFrame.current=undefined;
+    });
+    setAnnouncement('이전 화면 위치와 확대율로 돌아왔습니다.');
+  }
+  function focusSelectedNode() {
+    const result=searchWorkflowNodes(workflow,connections,'').find(item=>nodes.some(node=>node.key===item.key&&selected(node,selection)));
+    if(result)focusSearchResult(result);
+  }
+  function fit() {rememberViewport();pendingFit.current=++viewCommand.current;setFitRevision(value=>value+1);}
   function arrange() {
     if (disabled) return;
     const element=viewport.current;
@@ -838,7 +880,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const impactAffected=connectionImpact?.affectedEndpoints.some(endpoint=>endpointKey(connectionImpact.stage,endpoint)===node.key);
     const impactHint=impactProblems.map(problem=>problem.message).join(' ');
     const repairFocused=focusRequest&&endpointKey(focusRequest.stage,focusRequest.endpoint)===node.key;
-    return <button key={node.key} type="button" data-node-id={node.id} data-kind={kind} data-layout-key={node.key} data-execution-state={executionState} data-pinned={pinned||undefined}
+    return <Fragment key={node.key}><button type="button" data-node-id={node.id} data-kind={kind} data-layout-key={node.key} data-execution-state={executionState} data-pinned={pinned||undefined}
       className={`wc-node ${selected(node, selection) ? 'selected' : ''} ${pickedKeys.includes(node.key) ? 'multi-selected' : ''} ${zoneCompletionKeys.includes(node.key) ? 'zone-missing' : ''} ${rule && !rule.enabled ? 'off' : ''} ${drag.current?.key === node.key && preview ? 'moving' : ''} ${connectingClass} ${wirePreview?.targetKey === node.key ? 'wire-hover' : ''} ${impactProblems.length?'impact-risk':impactAffected?'impact-affected':''} ${repairFocused?'repair-focus':''} ${searchFocusKey===node.key?'search-focus':''} ${focusedPath&&!focusedPath.nodes.has(node.key)?'path-dimmed':''}`}
       style={{ left: position.x, top: position.y, width: NODE_WIDTH, height: NODE_HEIGHT }}
       title={`${title}\n${membership}: ${subtitle}${targetHint ? `\n${targetHint}` : ''}${impactHint?`\n연결 확인: ${impactHint}`:''}${status ? `\n${status}${stale ? ' (설정 변경 전)' : ''}${trace?.reason ? `: ${trace.reason}` : ''}` : ''}`}
@@ -854,13 +896,13 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       {node.stage&&<span className="wc-node-stage" aria-hidden="true">{isPolicy?node.kind==='policy'?'정책 모델':isPolicySwitch?'Switch 분기':isPolicyCondition?'조건 분기':'정책 액션':stageLabels[node.stage]}</span>}
       <strong className="wc-node-title">{title}</strong>{pinned&&<span className="wc-pinned-label">위치 고정</span>}
       {selectionMode && <span className={`wc-selection-check ${pickedKeys.includes(node.key) ? 'checked' : ''}`} aria-hidden="true">{pickedKeys.includes(node.key) && <Check size={10} />}</span>}
-      {badge && <span className={`wc-status ${badge.tone}`} title={badge.text}>{badge.text}</span>}
+      {badge && !executionView.hasExecution && <span className={`wc-status ${badge.tone}`} title={badge.text}>{badge.text}</span>}
       {impactProblems.length>0&&<span className="wc-impact-badge" aria-hidden="true">연결 확인</span>}
-    </button>;
+    </button>{badge&&executionView.hasExecution&&<button type="button" className={`wc-status wc-inspect-status ${badge.tone}`} style={{left:position.x+NODE_WIDTH-51,top:position.y}} title={`${title}: ${badge.text}. 실행 내역 보기`} aria-label={`${title} 실행 내역`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();const target:WorkflowSelection=node.kind==='rule'||node.kind==='group'||node.kind==='control'||node.kind==='policy-node'?{kind:node.kind,id:node.id}:{kind:node.kind};(onInspect||onSelect)(target);}}>{badge.text}</button>}</Fragment>;
   }
   return <section className={`wc-shell ${disabled ? 'locked' : ''}`} aria-label="워크플로우 배치">
     <div className="wc-toolbar">
-    <div className="wc-controls"><div className="wc-view-controls"><button type="button" ref={searchTrigger} className={searchOpen?'wc-search-toggle active':'wc-search-toggle'} title="노드 찾기" aria-label="워크플로우 노드 찾기" aria-expanded={searchOpen} aria-controls={searchId} onClick={()=>setSearchOpen(value=>!value)}><Search size={14}/><span>노드 찾기</span></button><button type="button" className={pathFocus&&selectedNode ? 'wc-path-focus active' : 'wc-path-focus'} title="선택한 노드로 이어지는 앞뒤 경로를 강조합니다. 실행과 설정은 바뀌지 않습니다." aria-label="선택한 노드 경로 강조" aria-pressed={Boolean(pathFocus&&selectedNode)} disabled={!selectedNode} onClick={()=>setPathFocus(value=>!value)}><GitBranch size={14}/><span>경로</span></button><span className="wc-control-divider" aria-hidden="true"/><button type="button" title="축소" aria-label="워크플로우 축소" onClick={() => {fitActive.current=false;setZoom(value => Math.max(.005, Math.round((value - .1) * 1000) / 1000));}} disabled={zoom <= .005}><Minus size={14} /></button><span>{zoom < .1 ? (zoom * 100).toFixed(1) : Math.round(zoom * 100)}%</span><button type="button" title="확대" aria-label="워크플로우 확대" onClick={() => {fitActive.current=false;setZoom(value => Math.min(1.5, Math.round((value + .1) * 100) / 100));}} disabled={zoom >= 1.5}><Plus size={14} /></button><span className="wc-control-divider" aria-hidden="true" /><button type="button" onClick={fit} title="전체 워크플로우 보기" aria-label="전체 보기"><Maximize2 size={14} /><span>전체 보기</span></button><button type="button" disabled={disabled} onClick={arrange} aria-label="자동 정렬"><LayoutGrid size={14} /><span>자동 정렬</span></button></div></div>
+    <div className="wc-controls"><div className="wc-view-controls"><button type="button" ref={searchTrigger} className={searchOpen?'wc-search-toggle active':'wc-search-toggle'} title="노드 찾기" aria-label="워크플로우 노드 찾기" aria-expanded={searchOpen} aria-controls={searchId} onClick={()=>setSearchOpen(value=>!value)}><Search size={14}/><span>노드 찾기</span></button><button type="button" className={pathFocus&&selectedNode ? 'wc-path-focus active' : 'wc-path-focus'} title="선택한 노드로 이어지는 앞뒤 경로를 강조합니다. 실행과 설정은 바뀌지 않습니다." aria-label="선택한 노드 경로 강조" aria-pressed={Boolean(pathFocus&&selectedNode)} disabled={!selectedNode} onClick={()=>setPathFocus(value=>!value)}><GitBranch size={14}/><span>경로</span></button><span className="wc-control-divider" aria-hidden="true"/><button type="button" title="축소" aria-label="워크플로우 축소" onClick={() => setViewZoom(Math.max(.005, Math.round((zoom - .1) * 1000) / 1000))} disabled={zoom <= .005}><Minus size={14} /></button><span>{zoom < .1 ? (zoom * 100).toFixed(1) : Math.round(zoom * 100)}%</span><button type="button" title="확대" aria-label="워크플로우 확대" onClick={() => setViewZoom(Math.min(1.5, Math.round((zoom + .1) * 100) / 100))} disabled={zoom >= 1.5}><Plus size={14} /></button><span className="wc-control-divider" aria-hidden="true" /><button type="button" onClick={fit} title="전체 워크플로우 보기" aria-label="전체 보기"><Maximize2 size={14} /><span>전체 보기</span></button><button type="button" onClick={()=>setViewZoom(1)} aria-label="100% 보기" title="100% 보기">100%</button><button type="button" disabled={!selectedNode} onClick={focusSelectedNode} aria-label="선택 노드로 이동" title="선택 노드로 이동"><Search size={14}/><span>선택 노드</span></button><button type="button" disabled={!canRestoreViewport} onClick={restoreView} aria-label="이전 화면으로 복귀" title="이전 화면으로 복귀"><RefreshCw size={14}/><span>이전 화면</span></button><button type="button" disabled={disabled} onClick={arrange} aria-label="자동 정렬"><LayoutGrid size={14} /><span>자동 정렬</span></button></div></div>
     {searchOpen&&<div id={searchId} className="wc-search-panel" ref={searchPanel} role="search" aria-label="워크플로우 노드 검색" onKeyDown={event=>{event.stopPropagation();if(event.key==='Escape'){event.preventDefault();closeSearch(true);}}}>
       <div className="wc-search-input"><Search size={15}/><input ref={searchInput} id={`${searchId}-input`} type="search" role="combobox" aria-label="노드 이름, 유형, 단계 또는 영역 검색" aria-autocomplete="list" aria-expanded="true" aria-controls={`${searchId}-results`} aria-activedescendant={searchResults[searchIndex]?`${searchId}-result-${searchIndex}`:undefined} placeholder="이름, 유형, 단계 또는 영역 검색" value={searchQuery} onChange={event=>{setSearchQuery(event.target.value);setSearchIndex(0);}} onKeyDown={searchKeys}/><button type="button" aria-label="노드 검색 닫기" onClick={()=>closeSearch(true)}><X size={14}/></button></div>
       <div className="wc-search-summary" role="status">{searchResults.length}개 노드{searchQuery.trim()?' 검색됨':''}</div>
