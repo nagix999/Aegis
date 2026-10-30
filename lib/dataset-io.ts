@@ -4,9 +4,9 @@ import { randomUuid } from './client-id.ts';
 import { fieldAssertionErrors } from './output-expectations.ts';
 import type { Dataset, DatasetRow } from './aegis-types';
 
-const optionalColumns = ['category', 'note', 'expectedStage', 'expectedRuleId', 'expectedDecision', 'expectedRoute', 'expectedPolicyCode', 'messages', 'generationOptions', 'expectedPolicyFields'] as const;
+const optionalColumns = ['category', 'note', 'expectedStage', 'expectedRuleId', 'expectedDecision', 'expectedRoute', 'expectedPolicyCode', 'expectedPolicyNodeId', 'messages', 'generationOptions', 'expectedPolicyFields'] as const;
 const stages = ['pre', 'post', 'main', 'complete'];
-const metadataLimits = { category: 80, note: 1000, expectedRuleId: 120, expectedDecision: 64, expectedPolicyCode: 64 } as const;
+const metadataLimits = { category: 80, note: 1000, expectedRuleId: 120, expectedDecision: 64, expectedPolicyCode: 64, expectedPolicyNodeId:120 } as const;
 function metadataErrors(row: Record<string, unknown>, prefix: string): string[] {
   const errors: string[] = [];
   for (const [key, maximum] of Object.entries(metadataLimits)) {
@@ -15,6 +15,7 @@ function metadataErrors(row: Record<string, unknown>, prefix: string): string[] 
   if (row.expectedStage !== undefined && (typeof row.expectedStage !== 'string' || !stages.includes(row.expectedStage))) errors.push(`${prefix} expectedStage 값은 pre, post, main, complete 중 하나여야 합니다.`);
   if (row.expectedRoute !== undefined && !['main','respond','error'].includes(String(row.expectedRoute))) errors.push(`${prefix} expectedRoute 값은 main, respond, error 중 하나여야 합니다.`);
   for (const key of ['expectedDecision','expectedPolicyCode']) if (row[key] !== undefined && (typeof row[key] !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(row[key] as string))) errors.push(`${prefix} ${key} 값은 등록한 대문자 코드로 입력하세요.`);
+  if(row.expectedPolicyNodeId!==undefined&&(typeof row.expectedPolicyNodeId!=='string'||!row.expectedPolicyNodeId.trim()||row.expectedPolicyNodeId.includes('/')))errors.push(`${prefix} 예상 정책 검사 ID를 확인하세요.`);
   if(row.expectedPolicyFields!==undefined)errors.push(...fieldAssertionErrors(row.expectedPolicyFields).map(error=>`${prefix} ${error}`));
   errors.push(...requestSettingsErrors(row, prefix));
   return errors;
@@ -95,7 +96,7 @@ export function parseDatasetFile(source:string,filename:string):Pick<Dataset,'na
   if(filename.toLowerCase().endsWith('.csv')){
     const normalizeHeader = (value: string) => {
       const key = value.trim().toLowerCase().replace(/_/g, '');
-      return key === 'expectedstage' ? 'expectedStage' : key === 'expectedruleid' ? 'expectedRuleId' : key === 'expecteddecision' ? 'expectedDecision' : key === 'expectedroute' ? 'expectedRoute' : key === 'expectedpolicycode' ? 'expectedPolicyCode' : key === 'generationoptions' ? 'generationOptions' : key === 'expectedpolicyfields' ? 'expectedPolicyFields' : key;
+      return key === 'expectedstage' ? 'expectedStage' : key === 'expectedruleid' ? 'expectedRuleId' : key === 'expecteddecision' ? 'expectedDecision' : key === 'expectedroute' ? 'expectedRoute' : key === 'expectedpolicycode' ? 'expectedPolicyCode' : key === 'expectedpolicynodeid' ? 'expectedPolicyNodeId' : key === 'generationoptions' ? 'generationOptions' : key === 'expectedpolicyfields' ? 'expectedPolicyFields' : key;
     };
     const rows=csvRows(text);const headers=rows.shift()?.map(normalizeHeader)||[];
     if(headers.filter(header=>header==='input').length!==1||headers.filter(header=>header==='expected').length!==1)throw new Error('CSV에는 input, expected 열이 각각 하나씩 필요합니다.');

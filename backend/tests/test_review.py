@@ -37,7 +37,7 @@ def test_execution_identity_ignores_display_but_tracks_rules_scopes_and_engine()
     assert configuration_fingerprint({**workflow, "executionLimits": {"timeoutMs": 1000, "maxModelCalls": 2}}, connections) != original
     explicit_defaults = {**workflow, "inputScope": "conversation", "executionLimits": {"timeoutMs": 120000, "maxModelCalls": 64}}
     assert configuration_fingerprint(explicit_defaults, connections) == original
-    assert ENGINE_VERSION == "7-python"
+    assert ENGINE_VERSION == "8-python"
 
 
 def test_expectations_only_match_final_response_attempt():

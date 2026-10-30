@@ -6,10 +6,13 @@ import { bindPolicyRevision } from './policy-routing.ts';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { policyNodePorts } from './policy-graph.ts';
 
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { workflowPolicyCheck, listWorkflowPolicyChecks, policyScopedId } from './workflow-policy-checks.ts';
+
 const validId=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(value);
 function prunePolicyLayout(next:Workflow,remove=false) {
   if(!next.layout)return;
-  const nodes=new Set(next.policyRouting?.graph?.nodes.map(node=>`policy-node:${node.id}`)??[]);
+  const nodes=new Set(listWorkflowPolicyChecks(next).flatMap(scope=>scope.routing.graph?.nodes.map(node=>`policy-node:${policyScopedId(scope.id,node.id)}`)??[]));
   const keep=(key:string)=>key==='policy'?!remove:key.startsWith('policy-node:')?nodes.has(key):true;
   next.layout.positions=Object.fromEntries(Object.entries(next.layout.positions).filter(([key])=>keep(key)));
   if(next.layout.pinnedKeys)next.layout.pinnedKeys=next.layout.pinnedKeys.filter(keep);
@@ -34,9 +37,9 @@ export function removeWorkflowPolicy(workflow: Workflow): Workflow {
 }
 
 /** Ports are data-driven graph edges; unfinished drafts may remain disconnected. */
-export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:string, port:string, edgeId?:string): Workflow {
-  const next = structuredClone(workflow), graph = next.policyRouting?.graph;
-  if (!graph || next.policyRouting?.policy.formatVersion !== 2) throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
+export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:string, port:string, edgeId?:string, ownerId='policy'): Workflow {
+  const next = structuredClone(workflow), routing=workflowPolicyCheck(next,ownerId)?.routing, graph = routing?.graph;
+  if (!graph || routing?.policy.formatVersion !== 2) throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
   const source=graph.nodes.find(node=>node.id===from), target=graph.nodes.find(node=>node.id===to);
   if (!source || !target || from===to || !['branch','rule','switch'].includes(source.kind) || !policyNodePorts(source).some(item=>item.port===port)) throw new Error('분기 노드의 출력 경로를 선택하세요.');
   if (!['branch','rule','switch','action'].includes(target.kind)) throw new Error('분기 다음에는 조건 분기, Switch 분기 또는 액션을 연결하세요.');
@@ -57,9 +60,10 @@ export function connectWorkflowPolicyNode(workflow: Workflow, from:string, to:st
   return next;
 }
 
-export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule'|'switch'|'action',identifier=`policy-${randomUuid()}`):{workflow:Workflow;nodeId:string} {
-  const next=structuredClone(workflow),graph=next.policyRouting?.graph;
-  if(!graph||next.policyRouting?.policy.formatVersion!==2)throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
+export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule'|'switch'|'action',identifier=`policy-${randomUuid()}`,ownerId='policy'):{workflow:Workflow;nodeId:string} {
+  if(ownerId==='policy'&&workflowPolicyCheck(workflow,identifier)&&identifier!=='policy'){ownerId=identifier;identifier=`policy-${randomUuid()}`;}
+  const next=structuredClone(workflow),routing=workflowPolicyCheck(next,ownerId)?.routing,graph=routing?.graph;
+  if(!graph||routing?.policy.formatVersion!==2)throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
   if(graph.nodes.length>=24)throw new Error('정책 노드는 최대 24개입니다.');
   if(!['branch','rule','switch','action'].includes(kind))throw new Error('조건 분기, Switch 분기 또는 액션을 선택하세요.');
   if(!validId(identifier)||graph.nodes.some(node=>node.id===identifier))throw new Error('새 정책 노드의 ID를 확인하세요.');
@@ -70,15 +74,16 @@ export function addWorkflowPolicyGraphNode(workflow:Workflow,kind:'branch'|'rule
 }
 
 /** An explicit port creation is one edit: a failed connection cannot leave an orphan. */
-export function addConnectedWorkflowPolicyNode(workflow:Workflow,from:string,port:string,kind:'branch'|'rule'|'switch'|'action',identifier=`policy-${randomUuid()}`):{workflow:Workflow;nodeId:string} {
-  const added=addWorkflowPolicyGraphNode(workflow,kind,identifier);
-  return {workflow:connectWorkflowPolicyNode(added.workflow,from,added.nodeId,port),nodeId:added.nodeId};
+export function addConnectedWorkflowPolicyNode(workflow:Workflow,from:string,port:string,kind:'branch'|'rule'|'switch'|'action',identifier=`policy-${randomUuid()}`,ownerId='policy'):{workflow:Workflow;nodeId:string} {
+  if(ownerId==='policy'&&workflowPolicyCheck(workflow,identifier)&&identifier!=='policy'){ownerId=identifier;identifier=`policy-${randomUuid()}`;}
+  const added=addWorkflowPolicyGraphNode(workflow,kind,identifier,ownerId);
+  return {workflow:connectWorkflowPolicyNode(added.workflow,from,added.nodeId,port,undefined,ownerId),nodeId:added.nodeId};
 }
 
 /** The policy model has one output; selecting its first condition is an explicit graph edit. */
-export function setWorkflowPolicyEntryNode(workflow:Workflow,nodeId:string):Workflow {
-  const next=structuredClone(workflow),graph=next.policyRouting?.graph;
-  if(!graph||next.policyRouting?.policy.formatVersion!==2)throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
+export function setWorkflowPolicyEntryNode(workflow:Workflow,nodeId:string,ownerId='policy'):Workflow {
+  const next=structuredClone(workflow),routing=workflowPolicyCheck(next,ownerId)?.routing,graph=routing?.graph;
+  if(!graph||routing?.policy.formatVersion!==2)throw new Error('구조화 출력 정책 노드를 먼저 추가하세요.');
   const node=graph.nodes.find(item=>item.id===nodeId);
   if(!node||!['branch','rule','switch'].includes(node.kind))throw new Error('정책 출력에 연결할 조건 분기 또는 Switch 분기를 선택하세요.');
   graph.entryNodeId=nodeId;

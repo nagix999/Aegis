@@ -23,17 +23,17 @@ function array(value: unknown, max: number, valid: (value: unknown) => boolean):
   return Array.isArray(value) && value.length <= max && value.every(valid);
 }
 function config(value: unknown): boolean {
-  if (!shape(value, ['pattern', 'maxLength', 'prompt', 'connectionId', 'piiTypes', 'requiredKeys', 'jsonMode', 'matchMode', 'guardProfile'])) return false;
+  if (!shape(value, ['pattern', 'maxLength', 'prompt', 'connectionId', 'piiTypes', 'requiredKeys', 'jsonMode', 'matchMode', 'guardProfile', 'policyRouting'])) return false;
   return optional(value.pattern, item => string(item, 2000)) && optional(value.maxLength, item => number(item, -1_000_000, 1_000_000))
     && optional(value.prompt, item => string(item, 4000)) && optional(value.connectionId, item => string(item, 120))
     && optional(value.piiTypes, item => array(item, 3, part => member(part, ['email', 'phone', 'resident'])))
     && optional(value.requiredKeys, item => array(item, 32, part => string(part, 100)))
     && optional(value.jsonMode, item => member(item, ['object', 'any'])) && optional(value.matchMode, item => member(item, ['any', 'all']))
-    && optional(value.guardProfile, item => member(item, ['custom', 'injection', 'safety']));
+    && optional(value.guardProfile, item => member(item, ['custom', 'injection', 'safety'])) && optional(value.policyRouting,policyRouting);
 }
 function rule(value: unknown): boolean {
   return shape(value, ['id', 'name', 'description', 'kind', 'enabled', 'config']) && identifier(value.id)
-    && string(value.name, 120) && string(value.description, 1000) && member(value.kind, ['keyword', 'regex', 'length', 'llm', 'pii', 'json', 'required'])
+    && string(value.name, 120) && string(value.description, 1000) && member(value.kind, ['keyword', 'regex', 'length', 'llm', 'pii', 'json', 'required', 'policy'])
     && typeof value.enabled === 'boolean' && config(value.config);
 }
 function group(value: unknown): boolean {
@@ -56,10 +56,10 @@ function point(value: unknown): boolean {
 function layout(value: unknown): boolean {
   if (!shape(value, ['version', 'positions', 'zones', 'pinnedKeys']) || value.version !== 1 || !object(value.positions)) return false;
   const entries = Object.entries(value.positions);
-  if (entries.length > 988 || !entries.every(([key, position]) => identifier(key, 150) && point(position))) return false;
-  return optional(value.pinnedKeys, pins => array(pins, 124, key => identifier(key, 150)) && new Set(pins as string[]).size === (pins as string[]).length) && optional(value.zones, zones => array(zones, 32, zone => shape(zone, ['id', 'name', 'color', 'nodeKeys', 'x', 'y', 'width', 'height'])
+  if (entries.length > 1280 || !entries.every(([key, position]) => identifier(key, 260) && point(position))) return false;
+  return optional(value.pinnedKeys, pins => array(pins, 1280, key => identifier(key, 260)) && new Set(pins as string[]).size === (pins as string[]).length) && optional(value.zones, zones => array(zones, 32, zone => shape(zone, ['id', 'name', 'color', 'nodeKeys', 'x', 'y', 'width', 'height'])
     && identifier(zone.id, 100) && string(zone.name, 120) && member(zone.color, ['slate', 'blue', 'green', 'amber', 'violet'])
-    && array(zone.nodeKeys, 988, key => identifier(key, 150)) && number(zone.x, 0, 40000) && number(zone.y, 0, 40000)
+    && array(zone.nodeKeys, 1280, key => identifier(key, 260)) && number(zone.x, 0, 40000) && number(zone.y, 0, 40000)
     && number(zone.width, 1, 50000) && number(zone.height, 1, 50000)));
 }
 function cloneSource(value: unknown): boolean {

@@ -6,6 +6,9 @@ import type { AppState, Connection, Dataset, DatasetRow, Rule, RuleKind, Workflo
 // @ts-expect-error Node's source test runner uses explicit TypeScript imports.
 import { configurationFingerprint, datasetFingerprint } from './workflow-review.ts';
 
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { expectedPolicyCheck } from './workflow-policy-checks.ts';
+
 export type WorkflowRuleOption = { id: string; name: string; kind: RuleKind; enabled: boolean; stage: 'pre' | 'post'; groupId: string; groupName: string; rule: Rule };
 export type DatasetCompatibilityCode = 'missing_rule' | 'disabled_rule' | 'ambiguous_rule' | 'impossible_stage' | 'rule_stage_mismatch' | 'missing_policy' | 'missing_policy_decision' | 'policy_route_mismatch' | 'policy_code_mismatch' | 'policy_field_mismatch';
 export type DatasetCompatibilityIssue = { code: DatasetCompatibilityCode; rowId: string; rowNumber: number; ruleId?: string; stage?: 'pre' | 'post'; severity: 'warning'; message: string };
@@ -32,15 +35,15 @@ export function inspectDatasetCompatibility(dataset: Dataset, workflow: Workflow
     const add = (code: DatasetCompatibilityCode, message: string, stage?: 'pre' | 'post') => issues.push({ code, rowId: row.id, rowNumber: index + 1, ...(row.expectedRuleId ? { ruleId: row.expectedRuleId } : {}), ...(stage ? { stage } : {}), severity: 'warning', message });
     if (row.expected === 'allow' && row.expectedStage && row.expectedStage !== 'complete') add('impossible_stage', '허용 결과는 모든 검사를 마친 완료 단계에서 반환됩니다. 예상 종료 단계를 확인하세요.');
     if (row.expected === 'block' && row.expectedStage && !['pre', 'post'].includes(row.expectedStage)) add('impossible_stage', '정책 차단은 요청 검사 또는 응답 검사에서 발생합니다. 예상 종료 단계를 확인하세요.');
-    const routing = workflow.policyRouting;
-    if (row.expectedDecision || row.expectedRoute || row.expectedPolicyCode || row.expectedPolicyFields) {
-      if (!routing) add('missing_policy', '예상 정책 판정이나 경로가 있지만 이 워크플로우에는 정책 분기가 없습니다.');
+    const scope=expectedPolicyCheck(workflow,row.expectedPolicyNodeId),routing=scope?.routing,policyStage=scope?.stage??'pre';
+    if (row.expectedPolicyNodeId || row.expectedDecision || row.expectedRoute || row.expectedPolicyCode || row.expectedPolicyFields) {
+      if (!routing) add('missing_policy', '예상 정책 판정이나 경로가 있지만 연결된 정책 검사를 찾을 수 없거나 여러 검사 중 대상을 선택하지 않았습니다.');
       else {
-        if(row.expectedPolicyFields && fieldAssertionErrors(row.expectedPolicyFields,routing.policy.outputSchema).length)add('policy_field_mismatch','예상 출력 필드 조건을 연결된 정책의 스키마에 맞게 확인하세요.','pre');
+        if(row.expectedPolicyFields && fieldAssertionErrors(row.expectedPolicyFields,routing.policy.outputSchema).length)add('policy_field_mismatch','예상 출력 필드 조건을 연결된 정책의 스키마에 맞게 확인하세요.',policyStage);
         const candidates = routing.policy.formatVersion === 2 ? (row.expectedDecision ? [] : routing.graph?.nodes.filter(node=>node.kind==='action') ?? []) : routing.routes.filter(route => !row.expectedDecision || route.decision === row.expectedDecision);
-        if (row.expectedDecision && !candidates.length) add('missing_policy_decision', '예상 판정 코드가 선택한 정책 버전에 없습니다.', 'pre');
-        else if (row.expectedRoute && !candidates.some(route => route.action === row.expectedRoute)) add('policy_route_mismatch', '예상 판정과 실행 경로의 연결이 현재 정책 설정과 다릅니다.', 'pre');
-        if (row.expectedPolicyCode && !candidates.some(route => route.action === 'error' && route.errorCode === row.expectedPolicyCode)) add('policy_code_mismatch', '예상 오류 코드가 현재 정책의 오류 경로에 없습니다.', 'pre');
+        if (row.expectedDecision && !candidates.length) add('missing_policy_decision', '예상 판정 코드가 선택한 정책 버전에 없습니다.', policyStage);
+        else if (row.expectedRoute && !candidates.some(route => route.action === row.expectedRoute)) add('policy_route_mismatch', '예상 판정과 실행 경로의 연결이 현재 정책 설정과 다릅니다.', policyStage);
+        if (row.expectedPolicyCode && !candidates.some(route => route.action === 'error' && route.errorCode === row.expectedPolicyCode)) add('policy_code_mismatch', '예상 오류 코드가 현재 정책의 오류 경로에 없습니다.', policyStage);
       }
     }
     if (!row.expectedRuleId) return;

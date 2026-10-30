@@ -8,6 +8,8 @@ export function inspectionForNode(inspection:ConsoleExecutionInspection|undefine
 
 export function inspectionValueText(value:ConsoleInspectionValue,inspection:ConsoleExecutionInspection,result:ExecutionResult,node?:ConsoleNodeInspection):string|undefined {
   if(value.availability!=='available')return;
+  if(Object.prototype.hasOwnProperty.call(value,'value'))return typeof value.value==='string'?value.value:JSON.stringify(value.value,null,2);
+  if(value.truncated)return value.preview;
   if(value.source==='request_messages')return JSON.stringify(inspection.request.messages,null,2);
   if(value.source==='request_inspection')return inspection.request.inspectionText;
   if(value.source==='final_response') {
@@ -16,9 +18,25 @@ export function inspectionValueText(value:ConsoleInspectionValue,inspection:Cons
   }
 }
 
+/** Explicit JSON values belong to administrator inspection, including rejected
+ * generations. Historical source references retain their original visibility. */
+export function inspectionValueJson(value:ConsoleInspectionValue,inspection:ConsoleExecutionInspection,result:ExecutionResult,node?:ConsoleNodeInspection):string|undefined {
+  if(value.availability!=='available')return;
+  if(Object.prototype.hasOwnProperty.call(value,'value'))return JSON.stringify(value.value,null,2);
+  if(value.truncated)return value.preview;
+  const text=inspectionValueText(value,inspection,result,node);
+  return text===undefined?undefined:value.source==='request_messages'?text:JSON.stringify(text,null,2);
+}
+
 /** A current draft cannot supply the case value selected by an older execution. */
 export function inspectionPortLabel(workflow:Workflow,nodeId:string,port:string,stale=false):string {
   if(stale)return port==='default'?'기본 경로 (default)':port;
-  const node=workflow.policyRouting?.graph?.nodes.find(item=>nodeId===`policy-node:${item.id}`);
+  let node=workflow.policyRouting?.graph?.nodes.find(item=>nodeId===`policy-node:${item.id}`);
+  if(!node&&nodeId.startsWith('policy-node:')) {
+    for(const group of [...(workflow.pre??[]),...(workflow.post??[])])for(const rule of group.rules) {
+      const prefix=`policy-node:${rule.id}/`;
+      if(rule.kind==='policy'&&nodeId.startsWith(prefix))node=rule.config.policyRouting?.graph?.nodes.find(item=>item.id===nodeId.slice(prefix.length));
+    }
+  }
   return port==='default'?'기본 경로':node?.kind==='switch'?JSON.stringify(node.cases.find(item=>item.id===port)?.value)??port:port==='true'?'참':port==='false'?'거짓':port;
 }

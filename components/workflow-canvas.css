@@ -225,7 +225,7 @@
 .app-shell .wc-status.policy{top:-2px;right:18px;width:auto;min-width:27px;height:18px;padding:1px 5px;border:1px solid #cbd9e6;border-radius:4px;background:#f0f5fa;color:#526e89;font-size:9px;font-weight:500}
 .app-shell .wc-status.policy::before{display:none}
 
-.app-shell .wc-inspect-status{right:auto;cursor:pointer;padding:0;touch-action:manipulation;z-index:5}
+.app-shell .wc-inspect-status{box-sizing:border-box;width:18px;height:18px;right:auto;cursor:pointer;padding:0;touch-action:manipulation;z-index:10}
 .app-shell .wc-inspect-status:focus-visible{outline:2px solid #7396bb;outline-offset:3px}
 .app-shell .wc-edge-selection{fill:none;stroke:#8a65c7;stroke-width:8px;stroke-opacity:.36;vector-effect:non-scaling-stroke;pointer-events:none}
 .app-shell .wc-connection.policy.selected>.wc-edge{stroke-width:2.5}

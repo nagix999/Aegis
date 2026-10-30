@@ -469,6 +469,24 @@ class Store:
             safe["policyRoute"] = log["policyRoute"]
         if isinstance(log.get("policyPath"), list) and len(log["policyPath"]) <= 24 and all(isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", identifier) for identifier in log["policyPath"]):
             safe["policyPath"] = list(log["policyPath"])
+        if isinstance(log.get("policyChecks"), list):
+            safe["policyChecks"] = []
+            for check in log["policyChecks"][:48]:
+                if not isinstance(check, dict) or check.get("stage") not in {"pre", "post"} or check.get("status") not in {"allow", "block", "error", "skipped"}:
+                    continue
+                if any(not isinstance(check.get(key), str) or not 0 < len(check[key]) <= 120 for key in ("ruleId", "policyId")) or type(check.get("policyVersion")) is not int or check["policyVersion"] < 1:
+                    continue
+                saved = {key: check[key] for key in ("ruleId", "policyId", "policyVersion", "stage", "status")}
+                if type(check.get("attempt")) is int and 1 <= check["attempt"] <= 4:
+                    saved["attempt"] = check["attempt"]
+                if check.get("route") in {"main", "respond", "error"}:
+                    saved["route"] = check["route"]
+                for key in ("decision", "policyCode"):
+                    if isinstance(check.get(key), str) and re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", check[key]):
+                        saved[key] = check[key]
+                if isinstance(check.get("path"), list) and len(check["path"]) <= 24 and all(isinstance(identifier, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,79}", identifier) for identifier in check["path"]):
+                    saved["path"] = list(check["path"])
+                safe["policyChecks"].append(saved)
         if "traces" in log:
             safe["traces"] = []
             for trace in log["traces"]:

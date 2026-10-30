@@ -1,3 +1,4 @@
+import * as policyChecks from '../lib/workflow-policy-checks.ts';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
@@ -20,7 +21,7 @@ function fixture(){
  workflow.policyRouting={graph:{nodes:[{id:'switch',kind:'switch',name:'값 선택',path:'/level',cases:[{id:'low',value:'low'},{id:'high',value:'high'}]},{id:'next',kind:'action',name:'응답',action:'main'}],edges:[{id:'edge-low',from:'switch',to:'next',port:'low'},{id:'edge-high',from:'switch',to:'next',port:'high'}]}};
  const focusCalls=[],scrollCalls=[];
  const node={dataset:{layoutKey:'policy-node:switch'},focus(options){focusCalls.push(options);},scrollIntoView(options){scrollCalls.push(options);}};
- const state={workflow,resolveLayout,editingDisabled:false,selectedCanvasKey:'policy-node:switch',pinnedKeys:[],pinnedSelection:false,policyEdgeSequence:{current:0},inspectorOpen:false,panelMode:'workflow',selection:{kind:'main'},view:'builder',selectedKeys:['main'],library:{stage:'pre'},policyEdgeFocus:undefined,
+ const state={...policyChecks,workflow,resolveLayout,editingDisabled:false,selectedCanvasKey:'policy-node:switch',pinnedKeys:[],pinnedSelection:false,policyEdgeSequence:{current:0},inspectorOpen:false,panelMode:'workflow',selection:{kind:'main'},view:'builder',selectedKeys:['main'],library:{stage:'pre'},policyEdgeFocus:undefined,
   resetInspectorForNode(){},requestAnimationFrame(callback){callback();},
   editorRef:{current:{querySelectorAll(){return[node];},querySelector(){return node;}}},inspectorRef:{current:{focus(options){focusCalls.push(options);}}},
   visibleLayoutKey(_workflow,key){return key;},

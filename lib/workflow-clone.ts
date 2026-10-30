@@ -17,6 +17,7 @@ export function cloneWorkflowContent(original: Workflow, identifier: (prefix: st
         const ruleId = identifier('rule');
         ruleIds.set(rule.id, ruleId);
         keys.set(`rule:${rule.id}`, `rule:${ruleId}`);
+        if(rule.kind==='policy')for(const node of rule.config.policyRouting?.graph?.nodes??[])keys.set(`policy-node:${rule.id}/${node.id}`,`policy-node:${ruleId}/${node.id}`);
         return { ...rule, id: ruleId };
       }) };
     });
@@ -31,7 +32,7 @@ export function cloneWorkflowContent(original: Workflow, identifier: (prefix: st
       ...edge, id: identifier('edge'), from: keys.get(edge.from) ?? edge.from, to: keys.get(edge.to) ?? edge.to,
     }));
   }
-  if (original.layout) clone.layout = { version: 1, ...(original.layout.zones ? {zones:original.layout.zones.map(zone=>({...zone,id:identifier('zone'),nodeKeys:zone.nodeKeys.flatMap(key=>keys.has(key)?[keys.get(key)!]:[])}))}:{}), positions: Object.fromEntries(
+  if (original.layout) clone.layout = { version: 1, ...(original.layout.pinnedKeys?{pinnedKeys:original.layout.pinnedKeys.flatMap(key=>keys.has(key)?[keys.get(key)!]:[])}:{}), ...(original.layout.zones ? {zones:original.layout.zones.map(zone=>({...zone,id:identifier('zone'),nodeKeys:zone.nodeKeys.flatMap(key=>keys.has(key)?[keys.get(key)!]:[])}))}:{}), positions: Object.fromEntries(
     Object.entries(original.layout.positions).flatMap(([key, position]) => {
       const mapped = keys.get(key); return mapped ? [[mapped, { ...position }]] : [];
     }),

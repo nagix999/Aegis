@@ -1,3 +1,4 @@
+import * as policyChecks from '../lib/workflow-policy-checks.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFile} from 'node:fs/promises';
@@ -30,7 +31,7 @@ function fixture(){
  const app=initialState(),workflow=structuredClone(app.workflows[0]);workflow.pre=[group('one'),group('two'),group('three')];workflow.post=[];delete workflow.graph;
  workflow.layout={version:1,positions:{input:{x:2500,y:1800},main:{x:4200,y:1800}},zones:[{id:'checks',name:'인접 검사',color:'blue',nodeKeys:['rule:one-rule','rule:two-rule'],x:100,y:100,width:600,height:240}]};
  const notices=[];let sequence=0;
- const state={workflow,structuredClone,autoLayout,createZoneForNodes,executionEndpointKey,knownLayoutKeys,nodeDefinitions,normalizedPinnedKeys,resolveLayout,visibleLayoutKey,getStageGraph,reconcileContiguousZoneResult,rememberWorkflowChange,restoreWorkflowHistory,captureCreationTargets,previewParallelCheckOnEdge,
+ const state={...policyChecks,workflow,structuredClone,autoLayout,createZoneForNodes,executionEndpointKey,knownLayoutKeys,nodeDefinitions,normalizedPinnedKeys,resolveLayout,visibleLayoutKey,getStageGraph,reconcileContiguousZoneResult,rememberWorkflowChange,restoreWorkflowHistory,captureCreationTargets,previewParallelCheckOnEdge,
    editingDisabled:false,history:{past:[],future:[]},pendingTextChange:{current:undefined},activeTextField:{current:undefined},autoFitRequest:0,editorRef:{current:{querySelector:()=>({clientWidth:900,clientHeight:500})}},
    pendingInsert:undefined,creation:undefined,library:undefined,policyChooser:false,newPolicyKey:'',conditionChooser:false,conditionTarget:'text',panelMode:'node',inspectorOpen:false,selectedTemplates:[],id:prefix=>`${prefix}-lifecycle-${++sequence}`,notify:message=>notices.push(message),openGraph:()=>{},
    onChange(next){state.workflow=next;},

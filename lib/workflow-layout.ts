@@ -155,12 +155,22 @@ function policyColumns(workflow:Workflow):LayoutColumn[]{
 
 /** Keep a whole rank together: parallel checks are never scattered across rows. */
 function layoutColumns(workflow: Workflow): LayoutColumn[] {
+  if([...workflow.pre,...workflow.post].some(group=>group.rules.some(rule=>rule.kind==='policy')))return expandedPolicyColumns(workflow);
   const terminal = (key: string): LayoutColumn => ({ items: [{ key, rank: 0, axis: 0, before: NODE_ICON_CENTER_Y, after: NODE_HEIGHT - NODE_ICON_CENTER_Y, width: NODE_WIDTH }] });
   const stage = (name: 'pre' | 'post') => {
     const plan = stagePlacements(workflow, name);
     return [...new Set(plan.map(item => item.rank))].sort((a,b) => a-b).map(rank => ({ items: plan.filter(item => item.rank === rank) }));
   };
   return [terminal('input'), ...stage('pre'), ...policyColumns(workflow), terminal('main'), ...stage('post'), terminal('output')];
+}
+function expandedPolicyColumns(workflow:Workflow):LayoutColumn[]{
+  const nodes=nodeDefinitions(workflow),keys=nodes.map(node=>node.key),known=new Set(keys),links=getWorkflowCanvasLinks(workflow);
+  const outgoing=new Map(keys.map(key=>[key,[] as string[]])),degree=new Map(keys.map(key=>[key,0])),ranks=new Map(keys.map(key=>[key,0]));
+  for(const edge of links)if(known.has(edge.from)&&known.has(edge.to)&&!outgoing.get(edge.from)!.includes(edge.to)){outgoing.get(edge.from)!.push(edge.to);degree.set(edge.to,degree.get(edge.to)!+1);}
+  const pending=keys.filter(key=>degree.get(key)===0),seen=new Set<string>();
+  while(pending.length){const key=pending.shift()!;seen.add(key);for(const to of outgoing.get(key)!){ranks.set(to,Math.max(ranks.get(to)!,ranks.get(key)!+1));degree.set(to,degree.get(to)!-1);if(degree.get(to)===0)pending.push(to);}}
+  let fallback=Math.max(...ranks.values())+1;for(const key of keys)if(!seen.has(key))ranks.set(key,fallback++);
+  return [...new Set(ranks.values())].sort((a,b)=>a-b).map(rank=>{const layer=nodes.filter(node=>ranks.get(node.key)===rank);return{items:layer.map((node,index)=>({key:node.key,rank,axis:(index-(layer.length-1)/2)*(NODE_HEIGHT+FLOW_GAP),before:NODE_ICON_CENTER_Y,after:NODE_HEIGHT-NODE_ICON_CENTER_Y,width:NODE_WIDTH}))};});
 }
 function columnExtents(columns: LayoutColumn[]) {
   const items = columns.flatMap(column => column.items);
@@ -276,7 +286,7 @@ function preservePinnedLayout(workflow: Workflow, defaults: CanvasPositions): Ca
     const origin = defaults[node.key];
     let candidate = { ...origin };
     // A collision always advances below one obstacle. If that reaches the
-    // canvas boundary, use the next column. At most 124 visible cards exist.
+    // canvas boundary, use the next column. Workflow and policy node counts are bounded.
     // Pinned cards can retain an intentional user overlap; automatic placement
     // never introduces an overlap with those cards or other unpinned cards.
     for (let attempts = 0; attempts < 4000; attempts++) {

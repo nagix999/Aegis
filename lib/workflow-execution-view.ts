@@ -6,6 +6,9 @@ import { nodeDefinitions } from './workflow-layout.ts';
 // @ts-expect-error Node's strip-types runner resolves explicit .ts paths.
 import { getWorkflowCanvasLinks } from './workflow-policy-canvas.ts';
 
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { listWorkflowPolicyChecks, policyScopedId } from './workflow-policy-checks.ts';
+
 export type CanvasExecutionState = 'idle'|'running'|'completed'|'block'|'error'|'skipped'|'stale'|'unconfirmed';
 export type WorkflowExecutionView = {nodes:Record<string,CanvasExecutionState>;edges:Record<string,CanvasExecutionState>;retryNodes:Set<string>;hasExecution:boolean;postAttempt:number};
 export const canvasExecutionLabels:Record<CanvasExecutionState,string> = {idle:'실행 대기',running:'실행 중',completed:'완료',block:'차단',error:'실행 오류',skipped:'실행 안 함',stale:'설정 변경 전 결과',unconfirmed:'선택 경로 구분 불가'};
@@ -182,6 +185,24 @@ export function workflowExecutionView(workflow:Workflow,{execution,inspection,pr
       // Direct responses enter POST from their action node. The separate Main
       // boundary is unvisited even though the POST start event is completed.
       if(link.stage==='post'&&link.graphFrom==='start'&&(route==='respond'||route==='error'))edges[link.id]=viewRunning?'idle':'skipped';
+    }
+  }
+  for(const scope of listWorkflowPolicyChecks(workflow).filter(scope=>scope.id!=='policy')){
+    const graph=scope.routing.graph,modelKey=`rule:${scope.id}`,prefix=`policy:${scope.id}:`,child=(id:string)=>`policy-node:${policyScopedId(scope.id,id)}`;
+    const checks=final?execution.policyChecks?.filter(check=>check.ruleId===scope.id&&(scope.stage==='pre'||(check.attempt??1)===postAttempt))??[]:[];
+    const check=checks.at(-1),events=progress.filter(event=>event.stage===scope.stage&&event.nodeId.startsWith(`policy:${scope.id}/`)&&(scope.stage==='pre'||(event.attempt??1)===postAttempt));
+    const visited=(check?.path??events.filter(event=>event.status!=='running').map(event=>event.nodeId.slice(`policy:${scope.id}/`.length))).filter(id=>graph?.nodes.some(node=>node.id===id));
+    if(final)for(const trace of execution.traces.filter(trace=>trace.traceType==='policy'&&trace.ruleId.startsWith(`policy:${scope.id}/`)&&(scope.stage==='pre'||(trace.attempt??1)===postAttempt))){const key=child(trace.ruleId.slice(`policy:${scope.id}/`.length));if(key in nodes)nodes[key]=trace.status==='allow'?'completed':trace.status;}
+    for(const event of events){const key=child(event.nodeId.slice(`policy:${scope.id}/`.length));if(key in nodes)nodes[key]=event.status;}
+    if(visited.length){nodes[modelKey]='completed';for(const id of visited)if(nodes[child(id)]==='idle')nodes[child(id)]='completed';}
+    const lastAction=[...visited].reverse().map(id=>graph?.nodes.find(node=>node.id===id)).find(node=>node?.kind==='action'),route=check?.route??(lastAction?.kind==='action'?lastAction.action:undefined);
+    const targetState=(key:string):CanvasExecutionState=>['running','completed','block','error'].includes(nodes[key])?nodes[key]:viewRunning?'idle':'skipped';
+    for(const link of getWorkflowCanvasLinks(workflow).filter(link=>link.policyOwnerId===scope.id)){
+      let state:CanvasExecutionState=viewRunning?'idle':'skipped';
+      if(link.id===`${prefix}entry`&&visited[0]===graph?.entryNodeId)state=targetState(link.to);
+      else if(link.policyEdgeId){const edge=graph?.edges.find(edge=>policyScopedId(scope.id,edge.id)===link.policyEdgeId),index=edge?visited.indexOf(edge.from):-1;if(edge&&index>=0&&visited[index+1]===edge.to){const candidates=graph?.edges.filter(other=>other.from===edge.from&&other.to===edge.to)??[],observed=inspection?.nodes.find(node=>node.nodeId===child(edge.from)&&(scope.stage==='pre'||(node.attempt??1)===postAttempt))?.selectedEdgeIds;state=observed?observed.some(id=>id===edge.id||id===policyScopedId(scope.id,edge.id))?targetState(link.to):'skipped':candidates.length===1?targetState(link.to):'unconfirmed';}}
+      else {const selectedV1=scope.routing.policy.formatVersion!==2&&scope.routing.routes.some((item,index)=>item.decision===check?.decision&&link.id.startsWith(`${prefix}route:${index}:`)),selectedAction=lastAction?.kind==='action'&&link.from===child(lastAction.id);if(selectedV1||selectedAction)state=route==='error'?'block':route==='main'?targetState(link.to):state;}
+      edges[link.id]=state;
     }
   }
   if(!viewRunning)for(const key of Object.keys(nodes))if(nodes[key]==='idle')nodes[key]='skipped';

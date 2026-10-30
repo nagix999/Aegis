@@ -74,14 +74,14 @@ def parse_policy_output(content: str, policy: dict):
         raise PolicyError("정책 모델의 출력이 지정한 JSON Schema와 일치하지 않습니다." if policy.get("formatVersion") == 2 else "정책 모델의 출력이 등록된 판정 형식과 일치하지 않습니다.") from None
 
 
-async def classify_policy(policy: dict, text: str, ingress: dict, env: dict, runtime: ExecutionRuntime | None = None, client=None) -> str:
+async def classify_policy(policy: dict, text: str, ingress: dict, env: dict, runtime: ExecutionRuntime | None = None, client=None, on_raw_output=None) -> str:
     from .engine import PolicyError
     if policy.get("formatVersion") == 2:
         raise PolicyError("자유 출력 정책은 JSON 출력과 분기 그래프로 실행해야 합니다.")
-    return (await classify_policy_output(policy, text, ingress, env, runtime, client))["decision"]
+    return (await classify_policy_output(policy, text, ingress, env, runtime, client, on_raw_output=on_raw_output))["decision"]
 
 
-async def classify_policy_output(policy: dict, text: str, ingress: dict, env: dict, runtime: ExecutionRuntime | None = None, client=None):
+async def classify_policy_output(policy: dict, text: str, ingress: dict, env: dict, runtime: ExecutionRuntime | None = None, client=None, on_raw_output=None):
     from .engine import PolicyError, model_chat
 
     try:
@@ -100,9 +100,24 @@ async def classify_policy_output(policy: dict, text: str, ingress: dict, env: di
         if example is None:
             raise PolicyError("예제 모델은 등록된 예제 입력과 정확히 일치하는 요청만 분류합니다.")
         output = example["expectedOutput"] if policy.get("formatVersion") == 2 else {"decision": example["expectedDecision"]}
-        return parse_policy_output(json.dumps(output, ensure_ascii=False, allow_nan=False), policy)
+        raw = json.dumps(output, ensure_ascii=False, allow_nan=False)
+        parsed = parse_policy_output(raw, policy)
+        if on_raw_output:
+            on_raw_output(raw, True)
+        return parsed
     options = {"temperature": 0, "max_tokens": policy.get("maxOutputTokens", 1024) if policy.get("formatVersion") == 2 else 256, "response_format": {"type": "json_schema", "json_schema": {"name": "aegis_policy_output" if policy.get("formatVersion") == 2 else "aegis_policy_decision", "strict": True, "schema": policy_output_schema(policy)}}}
     result = await model_chat(connection, ingress, env, compile_policy_messages(policy, text), options, runtime=runtime, client=client)
+    raw = result.get("content")
     if result.get("finishReason") != "stop":
+        if on_raw_output:
+            on_raw_output(raw, False)
         raise PolicyError("정책 모델의 출력이 완전하게 종료되지 않았습니다.")
-    return parse_policy_output(result.get("content"), policy)
+    try:
+        parsed = parse_policy_output(raw, policy)
+    except PolicyError:
+        if on_raw_output:
+            on_raw_output(raw, False)
+        raise
+    if on_raw_output:
+        on_raw_output(raw, True)
+    return parsed

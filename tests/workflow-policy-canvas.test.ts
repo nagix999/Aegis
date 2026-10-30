@@ -125,7 +125,7 @@ test('incomplete cyclic policy drafts still get bounded distinct placement witho
   for(const node of getPolicyCanvasNodes(workflow))assert.ok(Number.isFinite(positions[node.key].x)&&Number.isFinite(positions[node.key].y));
   assert.deepEqual(workflow,original);
 });
-test('maximum workflow and policy drafts retain 988 positions and 124 visible pins',()=>{
+test('legacy maximum drafts retain their positions and the expanded policy canvas limit is 1280',()=>{
   const workflow=fixture(),template=workflow.pre[0].rules[0];
   for(const stage of ['pre','post'] as const)workflow[stage]=Array.from({length:36},(_,index)=>({id:`${stage}-${index}`,name:'검사 조합',mode:'any',rules:Array.from({length:12},(_,rule)=>({...structuredClone(template),id:`${stage}-${index}-${rule}`}))}));
   workflow.graph={version:1,pre:{nodes:[],edges:[]},post:{nodes:[],edges:[]}};
@@ -135,6 +135,8 @@ test('maximum workflow and policy drafts retain 988 positions and 124 visible pi
   const positions=autoLayout(workflow),pins=nodeDefinitions(workflow).map(node=>node.key);
   assert.equal(Object.keys(positions).length,988);assert.equal(pins.length,124);
   workflow.layout={version:1,positions,pinnedKeys:pins};assert.equal(isRecoverableWorkflow(workflow),true);
-  workflow.layout.positions.extra={x:1,y:1};assert.equal(isRecoverableWorkflow(workflow),false);delete workflow.layout.positions.extra;
-  workflow.layout.pinnedKeys!.push('extra');assert.equal(isRecoverableWorkflow(workflow),false);
+  for(let index=988;index<1280;index++)workflow.layout.positions[`scoped-${index}`]={x:1,y:1};
+  assert.equal(isRecoverableWorkflow(workflow),true);workflow.layout.positions.extra={x:1,y:1};assert.equal(isRecoverableWorkflow(workflow),false);delete workflow.layout.positions.extra;
+  for(let index=124;index<1280;index++)workflow.layout.pinnedKeys!.push(`scoped-${index}`);
+  assert.equal(isRecoverableWorkflow(workflow),true);workflow.layout.pinnedKeys!.push('extra');assert.equal(isRecoverableWorkflow(workflow),false);
 });

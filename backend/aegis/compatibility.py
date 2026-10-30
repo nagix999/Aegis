@@ -33,27 +33,32 @@ def inspect_dataset_compatibility(dataset: dict, workflow: dict) -> dict:
             add("impossible_stage", "허용 결과는 모든 검사를 마친 완료 단계에서 반환됩니다. 예상 종료 단계를 확인하세요.")
         if row["expected"] == "block" and row.get("expectedStage") and row["expectedStage"] not in ("pre", "post"):
             add("impossible_stage", "정책 차단은 요청 검사 또는 응답 검사에서 발생합니다. 예상 종료 단계를 확인하세요.")
-        routing = workflow.get("policyRouting")
-        if any(row.get(key) for key in ("expectedDecision", "expectedRoute", "expectedPolicyCode", "expectedPolicyFields")):
-            if not routing:
-                add("missing_policy", "예상 정책 판정이나 경로가 있지만 이 워크플로우에는 정책 분기가 없습니다.")
+        from .policy_checks import select_policy_binding, workflow_policy_bindings
+        binding = select_policy_binding(workflow, row.get("expectedPolicyNodeId"))
+        routing = binding["routing"] if binding else None
+        if any(row.get(key) for key in ("expectedDecision", "expectedRoute", "expectedPolicyCode", "expectedPolicyFields", "expectedPolicyNodeId")):
+            if not binding:
+                ambiguous = not row.get("expectedPolicyNodeId") and len(workflow_policy_bindings(workflow)) > 1
+                add("ambiguous_policy" if ambiguous else "missing_policy", "정책 검사가 여러 개입니다. 예상 출력 조건에 사용할 정책 검사 노드를 선택하세요." if ambiguous else "예상 출력 조건에 지정한 정책 검사 노드를 찾을 수 없습니다.")
             else:
+                if not binding["enabled"]:
+                    add("disabled_policy", "예상 출력 조건의 정책 검사가 사용 중지되어 있습니다.", binding["stage"])
                 if row.get("expectedPolicyFields"):
                     try:
                         from .output_expectations import validate_field_assertions
                         from .policies import policy_output_schema
                         validate_field_assertions(row["expectedPolicyFields"], policy_output_schema(routing["policy"]))
                     except (ValueError, TypeError, KeyError):
-                        add("policy_field_mismatch", "예상 출력 필드 조건을 연결된 정책의 스키마에 맞게 확인하세요.", "pre")
+                        add("policy_field_mismatch", "예상 출력 필드 조건을 연결된 정책의 스키마에 맞게 확인하세요.", binding["stage"])
                 routes = [node for node in routing["graph"]["nodes"] if node["kind"] == "action"] if routing["policy"].get("formatVersion", 1) == 2 else routing["routes"]
                 expected_decision = row.get("expectedDecision")
                 candidates = [route for route in routes if not expected_decision or route.get("decision") == expected_decision]
                 if expected_decision and not candidates:
-                    add("missing_policy_decision", "예상 판정 코드가 선택한 정책 버전에 없습니다.", "pre")
+                    add("missing_policy_decision", "예상 판정 코드가 선택한 정책 버전에 없습니다.", binding["stage"])
                 elif row.get("expectedRoute") and not any(route["action"] == row["expectedRoute"] for route in candidates):
-                    add("policy_route_mismatch", "예상 판정과 실행 경로의 연결이 현재 정책 설정과 다릅니다.", "pre")
+                    add("policy_route_mismatch", "예상 판정과 실행 경로의 연결이 현재 정책 설정과 다릅니다.", binding["stage"])
                 if row.get("expectedPolicyCode") and not any(route["action"] == "error" and route.get("errorCode") == row["expectedPolicyCode"] for route in candidates):
-                    add("policy_code_mismatch", "예상 오류 코드가 현재 정책의 오류 경로에 없습니다.", "pre")
+                    add("policy_code_mismatch", "예상 오류 코드가 현재 정책의 오류 경로에 없습니다.", binding["stage"])
         if not row.get("expectedRuleId"):
             continue
         matches = [option for option in options if option["id"] == row["expectedRuleId"]]
@@ -194,6 +199,15 @@ def _visible_keys(workflow: dict) -> tuple[list[str], set[str], dict[str, str]]:
                 keys.append(key)
                 aliases[key] = key
                 all_keys.add(key)
+    from .policy_checks import workflow_policy_bindings
+    for binding in workflow_policy_bindings(workflow):
+        if "rule" not in binding or binding["routing"]["policy"].get("formatVersion", 1) != 2:
+            continue
+        for node in binding["routing"].get("graph", {}).get("nodes", []):
+            key = f"policy-node:{binding['id']}/{node['id']}"
+            keys.append(key)
+            aliases[key] = key
+            all_keys.add(key)
     return keys, all_keys, aliases
 
 
@@ -214,9 +228,22 @@ def _zone_graph(workflow: dict) -> tuple[list[str], dict[str, list[str]], dict[s
             if key == "end":
                 return ("policy" if routing else "main") if stage == "pre" else "output"
             return aliases.get(key)
+        from .policy_checks import workflow_policy_bindings
+        bindings = [item for item in workflow_policy_bindings(workflow) if item["stage"] == stage and "rule" in item and item["routing"]["policy"].get("formatVersion", 1) == 2]
+        by_group = {f"group:{item['group']['id']}": item for item in bindings}
         for edge in get_stage_graph(workflow, stage).get("edges", []):
-            start, end = endpoint(edge["from"]), endpoint(edge["to"])
-            connect(start, end)
+            binding = by_group.get(edge["from"])
+            sources = [f"policy-node:{binding['id']}/{node['id']}" for node in binding["routing"]["graph"]["nodes"] if node["kind"] == "action" and node["action"] == "main"] if binding else [endpoint(edge["from"])]
+            for start in sources:
+                connect(start, endpoint(edge["to"]))
+        for binding in bindings:
+            plan, owner = binding["routing"]["graph"], binding["id"]
+            connect(aliases[f"rule:{owner}"], f"policy-node:{owner}/{plan['entryNodeId']}")
+            for edge in plan["edges"]:
+                connect(f"policy-node:{owner}/{edge['from']}", f"policy-node:{owner}/{edge['to']}")
+            for node in plan["nodes"]:
+                if node["kind"] == "action" and node["action"] == "error":
+                    connect(f"policy-node:{owner}/{node['id']}", "output")
     if routing:
         def post_endpoint(key):
             return "output" if key == "end" else aliases.get(key)

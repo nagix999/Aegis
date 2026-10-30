@@ -304,7 +304,7 @@ def test_switch_field_creates_typed_enum_cases_and_keeps_saved_routes(page, cons
     assert [edge for edge in saved['policyRouting']['graph']['edges'] if edge['from']==switch_id]==edges
 
 
-def test_execution_badge_opens_safe_node_input_output_and_selected_switch_port(page, console_server):
+def test_execution_badge_opens_admin_json_and_selected_switch_port(page, console_server):
     enter(page, console_server)
     seed_workflow(page, complete_switch=True)
     open_editor(page, console_server, 'fixture-switch')
@@ -326,8 +326,8 @@ def test_execution_badge_opens_safe_node_input_output_and_selected_switch_port(p
     expect(page.get_by_role('tab', name='실행 내역', exact=False)).to_have_attribute('aria-selected','true')
     details=page.locator('.we-node-inspection')
     expect(details).to_contain_text('선택 경로:')
-    expect(details).to_contain_text('비공개')
-    expect(details.locator('pre')).to_have_count(0)
+    expect(details.get_by_label('노드 입력 JSON',exact=True)).to_contain_text('risk')
+    expect(details.get_by_label('노드 출력 JSON',exact=True)).to_contain_text('selectedPort')
     page.get_by_role('tab', name='설정', exact=True).click()
     expect(page.get_by_label('Switch 필드 경로', exact=True)).to_be_visible()
     close_panel(page)
@@ -341,7 +341,7 @@ def test_execution_badge_opens_safe_node_input_output_and_selected_switch_port(p
     expect(page.locator('[data-layout-key="policy-node:fixture-switch"]')).to_have_count(1)
 
 
-def test_blocked_post_response_is_withheld_from_the_node_panel(page, console_server):
+def test_blocked_post_response_is_visible_only_in_admin_node_details(page, console_server):
     enter(page, console_server)
     seed_workflow(page, complete_switch=True)
     status=page.evaluate("""async () => {
@@ -363,10 +363,11 @@ def test_blocked_post_response_is_withheld_from_the_node_panel(page, console_ser
     message=next(json.loads(line) for line in payload.splitlines() if json.loads(line)['type']=='result')
     assert message['result']['status']=='block'
     assert message['result']['output']==''
-    assert '선택된 경로 0' not in json.dumps(message,ensure_ascii=False)
+    assert '선택된 경로 0' not in json.dumps(message['result'],ensure_ascii=False)
+    assert '선택된 경로 0' in json.dumps(message['inspection'],ensure_ascii=False)
     page.locator('.we-run-dock-toggle').click()
     page.get_by_role('button', name='전체 보기', exact=True).click()
     page.get_by_role('button', name='비공개 응답 검사 실행 내역', exact=True).click()
     panel=page.locator('.we-node-inspection')
-    expect(panel.get_by_label('노드 입력', exact=True)).to_contain_text('비공개')
-    expect(panel.locator('pre')).to_have_count(0)
+    expect(panel.get_by_label('노드 입력 JSON', exact=True)).to_contain_text('선택된 경로 0')
+    expect(panel.get_by_label('노드 출력 JSON', exact=True)).to_contain_text('block')

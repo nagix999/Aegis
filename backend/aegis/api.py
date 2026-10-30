@@ -162,7 +162,7 @@ def deployment_request(actor: str, key: str, data: dict) -> dict:
 
 
 def record_log(result: dict, source: str, workflow: dict, version: str, key_id=None, deployment_id=None):
-    value = {"id": result["id"], "source": source, "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": now_iso(), **{key: result[key] for key in ("status", "stage", "latencyMs", "reason", "traces", "usage", "flowTraces", "attempts", "regenerationCount", "policyDecision", "policyRoute", "policyCode", "policyPath") if key in result}}
+    value = {"id": result["id"], "source": source, "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": now_iso(), **{key: result[key] for key in ("status", "stage", "latencyMs", "reason", "traces", "usage", "flowTraces", "attempts", "regenerationCount", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks") if key in result}}
     if key_id:
         value["keyId"] = key_id
     if deployment_id:
@@ -204,8 +204,9 @@ def _parse_time(value):
 
 def validate_snapshot_connections(connections: list, ingress: dict, env: dict, workflow: dict | None = None):
     snapshots = list(connections)
-    if workflow and workflow.get("policyRouting"):
-        snapshots.append(workflow["policyRouting"]["policy"]["connectionSnapshot"])
+    if workflow:
+        from .policy_checks import workflow_policy_bindings
+        snapshots.extend(item["routing"]["policy"]["connectionSnapshot"] for item in workflow_policy_bindings(workflow))
     for connection in snapshots:
         if connection.get("mode") != "vllm":
             continue
@@ -440,9 +441,10 @@ def create_router(store, env: dict) -> APIRouter:
                     extra["policyTest"] = {"results": results, "schema": policy_output_schema(policy), "mode": connection["value"]["mode"]}
             elif action == "save_workflow":
                 workflow = validate_payload("workflow", data.get("workflow"))
-                if workflow.get("policyRouting"):
-                    from .structured_schema import strict_json_equal
-                    snapshot = workflow["policyRouting"]["policy"]
+                from .policy_checks import workflow_policy_bindings
+                from .structured_schema import strict_json_equal
+                for binding in workflow_policy_bindings(workflow):
+                    snapshot = binding["routing"]["policy"]
                     registered = await store.get_record("policy", f"{snapshot['id']}:{snapshot['version']}")
                     require(strict_json_equal(registered, snapshot), "등록된 정책 버전을 다시 선택하세요. 정책 내용은 버전을 새로 저장한 뒤 연결해야 합니다.", "invalid_policy_snapshot")
                 previous = next((w for w in state["workflows"] if w["id"] == workflow["id"]), None)
@@ -457,13 +459,9 @@ def create_router(store, env: dict) -> APIRouter:
                 group_ids = [g["id"] for g in groups]
                 require(len(rule_ids) == len(set(rule_ids)), "워크플로우 안의 검사 ID는 서로 달라야 합니다.")
                 require(len(group_ids) == len(set(group_ids)), "단계 ID는 고유해야 합니다.")
-                controls = [f"control:{node['id']}" for stage in ("pre", "post") for node in workflow.get("graph", {}).get(stage, {}).get("nodes", [])]
-                known = {"input", "main", "output", *controls, *(f"group:{v}" for v in group_ids), *(f"rule:{v}" for v in rule_ids)}
-                visible = {"input", "main", "output", *controls, *(f"rule:{g['rules'][0]['id']}" if len(g["rules"]) == 1 else f"group:{g['id']}" for g in groups)}
-                if workflow.get("policyRouting"):
-                    policy_keys = {"policy", *(f"policy-node:{node['id']}" for node in workflow["policyRouting"].get("graph", {}).get("nodes", []))}
-                    known.update(policy_keys)
-                    visible.update(policy_keys)
+                from .compatibility import _visible_keys
+                keys, known, _ = _visible_keys(workflow)
+                visible = set(keys)
                 layout = workflow.get("layout", {})
                 require(set(layout.get("positions", {})) <= known, "노드 위치에 현재 워크플로우에 없는 노드가 포함되어 있습니다.")
                 require(set(layout.get("pinnedKeys", [])) <= visible, "위치를 고정할 노드를 현재 화면에서 다시 선택하세요.")

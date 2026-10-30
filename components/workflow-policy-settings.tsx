@@ -5,9 +5,10 @@ import type { PolicyRevision, PolicyRoute, PolicyRouting } from '@/lib/aegis-typ
 import { bindPolicyRevision, changePolicyRouteAction, policyOutputSchema, policyRoutingErrors } from '@/lib/policy-routing';
 import { policyGraphSchemaIssues, policySchemaChanges } from '@/lib/policy-schema-guidance';
 import { PolicyGraphEditor } from './policy-graph-editor';
+import { bindPolicyCheckRevision, policyCheckRoutingErrors } from '@/lib/workflow-policy-checks';
 import './workflow-policy-settings.css';
 
-export function WorkflowPolicySettings({ routing, policies, disabled, onChange, onFocusPolicyNode, onOpenPolicy, nodeMode=false }: { routing?: PolicyRouting; policies: PolicyRevision[]; disabled: boolean; onChange: (routing?: PolicyRouting) => void; onFocusPolicyNode?:(nodeId:string,predicateIndex?:number)=>void; onOpenPolicy?:(policyId:string,version:number)=>void; nodeMode?:boolean }) {
+export function WorkflowPolicySettings({ routing, policies, disabled, onChange, onFocusPolicyNode, onOpenPolicy, nodeMode=false,actionMode='routing' }: { routing?: PolicyRouting; policies: PolicyRevision[]; disabled: boolean; onChange: (routing?: PolicyRouting) => void; onFocusPolicyNode?:(nodeId:string,predicateIndex?:number)=>void; onOpenPolicy?:(policyId:string,version:number)=>void; nodeMode?:boolean;actionMode?:'routing'|'check' }) {
   const selectedKey = routing ? `${routing.policy.id}:${routing.policy.version}` : '';
   const [pendingPolicy,setPendingPolicy]=useState<PolicyRevision>();
   useEffect(()=>setPendingPolicy(undefined),[selectedKey]);
@@ -18,19 +19,19 @@ export function WorkflowPolicySettings({ routing, policies, disabled, onChange, 
     if (!routing) return;
     onChange({ ...routing, routes: routing.routes.map(route => route.decision === decision ? { ...(patch.action ? changePolicyRouteAction(route, patch.action) : route), ...patch } : route) });
   }
-  const errors = routing ? policyRoutingErrors(routing) : [];
+  const errors = routing ? (actionMode==='check'?policyCheckRoutingErrors(routing):policyRoutingErrors(routing)) : [];
   const changes=routing&&pendingPolicy?policySchemaChanges(policyOutputSchema(routing.policy),policyOutputSchema(pendingPolicy)):[];
   const affected=routing?.graph&&pendingPolicy?policyGraphSchemaIssues(routing.graph,policyOutputSchema(pendingPolicy)):[];
   const resetGraph=Boolean(routing?.graph?.nodes.length&&pendingPolicy&&!(routing.policy.id===pendingPolicy.id&&routing.policy.formatVersion===2&&pendingPolicy.formatVersion===2));
   function applyPolicy(policy:PolicyRevision) {
-    const bound = bindPolicyRevision(policy, routing?.policy.id === policy.id ? routing.routes : []);
+    const bound = actionMode==='check'?bindPolicyCheckRevision(policy,routing,nodeMode):bindPolicyRevision(policy, routing?.policy.id === policy.id ? routing.routes : []);
     if (policy.formatVersion===2 && routing?.policy.formatVersion===2 && routing.policy.id===policy.id && routing.graph) bound.graph=structuredClone(routing.graph);
     if (nodeMode && policy.formatVersion===2 && !(routing?.policy.formatVersion===2 && routing.policy.id===policy.id && routing.graph)) bound.graph={version:1,entryNodeId:'',nodes:[],edges:[]};
     onChange(bound);setPendingPolicy(undefined);
   }
   return <section className="we-policy-settings" aria-label="정책 분기 설정">
     <div className="we-section-title">{nodeMode?'적용할 정책':'정책 분기'}</div>
-    <p className="we-fine">{nodeMode?'선택한 정책으로 요청을 분석합니다. 검증한 JSON 출력은 연결된 조건 분기에서 사용합니다.':'요청 검사를 통과한 뒤 정책 출력을 검증하고 조건 분기와 액션을 실행합니다. 기존 판정 정책은 저장한 연결을 유지합니다.'}</p>
+    <p className="we-fine">{actionMode==='check'?'이 노드가 있는 구간의 요청 또는 응답을 검사합니다. 통과하면 다음 검사로 이동하고 차단하면 현재 구간에서 중단합니다.':nodeMode?'선택한 정책으로 요청을 분석합니다. 검증한 JSON 출력은 연결된 조건 분기에서 사용합니다.':'요청 검사를 통과한 뒤 정책 출력을 검증하고 조건 분기와 액션을 실행합니다. 기존 판정 정책은 저장한 연결을 유지합니다.'}</p>
     <label className="field">사용할 정책 버전<select aria-label="사용할 정책 버전" value={pendingPolicy?`${pendingPolicy.id}:${pendingPolicy.version}`:selectedKey} disabled={disabled} onChange={event => {
       const policy = options.find(item => `${item.id}:${item.version}` === event.target.value);
       if (!policy) { onChange(undefined); return; }
@@ -47,12 +48,12 @@ export function WorkflowPolicySettings({ routing, policies, disabled, onChange, 
       {latest && latest.version > routing.policy.version && <p className="we-info">새 버전 v{latest.version}이 있습니다. 현재 설정은 v{routing.policy.version}을 유지합니다. 변경하려면 새 버전을 직접 선택하세요.</p>}
       {onOpenPolicy&&<button type="button" className="btn small" onClick={()=>onOpenPolicy(routing.policy.id,routing.policy.version)}>고정한 정책 버전 열기</button>}
       <details className="we-policy-snapshot"><summary>고정한 정책 내용 보기</summary><dl><dt>정책</dt><dd>{routing.policy.name} v{routing.policy.version}</dd><dt>모델</dt><dd>{routing.policy.connectionSnapshot.name} / {routing.policy.connectionSnapshot.model} ({routing.policy.connectionSnapshot.mode === 'demo' ? '예제 모드' : 'vLLM'})</dd></dl><strong>판정 지시문</strong><pre>{routing.policy.prompt}</pre><strong>출력 스키마</strong><pre>{JSON.stringify(policyOutputSchema(routing.policy), null, 2)}</pre></details>
-      {!nodeMode&&routing.graph&&routing.policy.formatVersion===2&&<PolicyGraphEditor key={`${routing.policy.id}:${routing.policy.version}`} graph={routing.graph} schema={policyOutputSchema(routing.policy)} policyExamples={routing.policy.examples} policyLabel={`${routing.policy.name} v${routing.policy.version}`} disabled={disabled} onChange={graph=>onChange({...routing,graph})}/>}
+      {!nodeMode&&routing.graph&&routing.policy.formatVersion===2&&<PolicyGraphEditor key={`${routing.policy.id}:${routing.policy.version}`} graph={routing.graph} actionMode={actionMode} schema={policyOutputSchema(routing.policy)} policyExamples={routing.policy.examples} policyLabel={`${routing.policy.name} v${routing.policy.version}`} disabled={disabled} onChange={graph=>onChange({...routing,graph})}/>}
       {routing.policy.formatVersion!==2&&routing.policy.decisions.map(decision => {
         const route = routing.routes.find(item => item.decision === decision.code) ?? { decision: decision.code, action: 'main' as const };
         return <fieldset className="we-policy-route" key={decision.code} disabled={disabled}><legend>{decision.label} <code>{decision.code}</code></legend>{decision.description && <p>{decision.description}</p>}
-          <label className="field">실행 경로<select aria-label={`${decision.code} 실행 경로`} value={route.action} onChange={event => updateRoute(decision.code, { action: event.target.value as PolicyRoute['action'] })}><option value="main">응답 모델 실행</option><option value="respond">등록 안내 응답</option><option value="error">지정 오류 반환</option></select></label>
-          {route.action === 'respond' && <label className="field">안내 응답<textarea aria-label={`${decision.code} 안내 응답`} rows={3} maxLength={4000} value={route.responseText ?? ''} onChange={event => updateRoute(decision.code, { responseText: event.target.value })} /><small>응답 모델 호출을 생략하고 이 문구를 응답 검사에 전달합니다. 차단 시 종료하며 재작성하지 않습니다.</small></label>}
+          <label className="field">실행 경로<select aria-label={`${decision.code} 실행 경로`} value={route.action} onChange={event => updateRoute(decision.code, { action: event.target.value as PolicyRoute['action'] })}><option value="main">{actionMode==='check'?'다음 검사 계속':'응답 모델 실행'}</option>{actionMode!=='check'&&<option value="respond">등록 안내 응답</option>}<option value="error">{actionMode==='check'?'차단':'지정 오류 반환'}</option></select></label>
+          {actionMode!=='check'&&route.action === 'respond' && <label className="field">안내 응답<textarea aria-label={`${decision.code} 안내 응답`} rows={3} maxLength={4000} value={route.responseText ?? ''} onChange={event => updateRoute(decision.code, { responseText: event.target.value })} /><small>응답 모델 호출을 생략하고 이 문구를 응답 검사에 전달합니다. 차단 시 종료하며 재작성하지 않습니다.</small></label>}
           {route.action === 'error' && <><label className="field">공개 오류 코드<input aria-label={`${decision.code} 공개 오류 코드`} maxLength={64} value={route.errorCode ?? ''} placeholder="예: PII_RESTRICTED" onChange={event => updateRoute(decision.code, { errorCode: event.target.value })} /></label><label className="field">공개 오류 메시지<textarea aria-label={`${decision.code} 공개 오류 메시지`} rows={2} maxLength={500} value={route.errorMessage ?? ''} onChange={event => updateRoute(decision.code, { errorMessage: event.target.value })} /><small>Gateway는 정책 차단과 이 공개 코드를 반환합니다. 모델의 내부 설명은 공개하지 않습니다.</small></label></>}
         </fieldset>;
       })}

@@ -142,7 +142,7 @@ def _execution_failure() -> dict:
 def _evaluation_log(result: dict, workflow: dict, version: str) -> dict:
     reasons = {"allow": "검사를 통과했습니다.", "block": "검사 정책에 따라 차단했습니다.", "error": "검사 실행 중 오류가 발생했습니다.", "skipped": "실행하지 않았습니다."}
     log = {"id": result["id"], "source": "evaluation", "workflowId": workflow["id"], "workflowName": workflow["name"], "version": version, "createdAt": _now(), "status": result["status"], "stage": result["stage"], "latencyMs": result["latencyMs"], "reason": reasons[result["status"]], "traces": [{**trace, "reason": reasons[trace["status"]]} for trace in result["traces"]]}
-    for key in ("flowTraces", "regenerationCount", "usage", "policyDecision", "policyRoute", "policyCode", "policyPath"):
+    for key in ("flowTraces", "regenerationCount", "usage", "policyDecision", "policyRoute", "policyCode", "policyPath", "policyChecks"):
         if key in result:
             log[key] = copy.deepcopy(result[key])
     if "attempts" in result:
@@ -153,14 +153,14 @@ def _evaluation_log(result: dict, workflow: dict, version: str) -> dict:
 async def _run_row(row: dict, workflow: dict, connections: list, version: str, state: dict, store: Any, env: dict) -> dict:
     from .engine import execute_workflow
     try:
-        result = await execute_workflow(workflow, connections, state["ingress"], env, row.get("messages", [{"role": "user", "content": row["input"]}]), row.get("generationOptions", {}), **({"expected_policy_fields": row["expectedPolicyFields"]} if row.get("expectedPolicyFields") else {}))
+        result = await execute_workflow(workflow, connections, state["ingress"], env, row.get("messages", [{"role": "user", "content": row["input"]}]), row.get("generationOptions", {}), **({"expected_policy_fields": row["expectedPolicyFields"]} if row.get("expectedPolicyFields") else {}), **({"expected_policy_node_id": row["expectedPolicyNodeId"]} if row.get("expectedPolicyNodeId") else {}))
     except Exception:
         result = _execution_failure()
     await store.log(_evaluation_log(result, workflow, version))
     if result["status"] != "allow":
         result = {**result, "output": ""}
     metadata = {key: copy.deepcopy(value) for key, value in row.items() if key not in {"id", "expectedPolicyFields"}}
-    return {**result, **metadata, "rowId": row["id"], "expectationMatched": matches_expectation(row, result)}
+    return {**result, **metadata, "rowId": row["id"], "expectationMatched": matches_expectation(row, result, workflow)}
 
 
 async def _step_run(run_id: Any, state: dict, store: Any, env: dict) -> dict:

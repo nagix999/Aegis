@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 // @ts-expect-error Node's strip-types runner resolves explicit .ts paths.
-import {inspectionForNode,inspectionPortLabel,inspectionValueText} from '../lib/node-inspection-view.ts';
+import {inspectionForNode,inspectionPortLabel,inspectionValueText,inspectionValueJson} from '../lib/node-inspection-view.ts';
 import type {ConsoleExecutionInspection,ConsoleNodeInspection,ExecutionResult,Workflow} from '../lib/aegis-types';
 
 const hidden={availability:'withheld',type:'text',summary:'비공개'} as const;
@@ -37,4 +37,26 @@ test('older execution ports are not relabeled with a changed draft case value',(
   assert.equal(inspectionPortLabel(workflow,'policy-node:switch','stable-case',true),'stable-case');
   assert.equal(inspectionPortLabel(workflow,'policy-node:switch','true',true),'true');
   assert.equal(inspectionPortLabel(workflow,'policy-node:switch','default',true),'기본 경로 (default)');
+});
+test('administrator raw values preserve JSON types and rejected generations without changing legacy reference visibility',()=>{
+  for(const value of [null,false,0,'',[],{}, {nested:[null,false,'😀']}]) {
+    const detail={availability:'available',type:'json',summary:'실제 값',value} as const;
+    assert.deepEqual(JSON.parse(inspectionValueJson(detail,inspection,{...result,status:'block',output:''})!),value);
+  }
+  const rejected={availability:'available',type:'text',summary:'생성 원문',value:'차단된 생성 답변'} as const;
+  assert.equal(inspectionValueText(rejected,inspection,{...result,status:'block',output:''}),'차단된 생성 답변');
+  assert.equal(inspectionValueJson(rejected,inspection,{...result,status:'block',output:''}),'"차단된 생성 답변"');
+  assert.equal(inspectionValueJson({...rejected,availability:'withheld'},inspection,result),undefined);
+});
+test('truncated values never recover an unbounded full value from legacy source references',()=>{
+  const detail={...shown,truncated:true,preview:'"짧은 일부',originalBytes:500_000};
+  assert.equal(inspectionValueText(detail,inspection,result),'"짧은 일부');
+  assert.equal(inspectionValueJson(detail,inspection,result),'"짧은 일부');
+  assert.equal(inspectionValueJson({...detail,preview:undefined},inspection,result),undefined);
+});
+test('nested policy case labels use the owning rule even when local node IDs repeat',()=>{
+  const workflow={pre:[{rules:[{id:'owner-a',kind:'policy',config:{policyRouting:{graph:{nodes:[{id:'switch',kind:'switch',cases:[{id:'one',value:'FIRST'}]}]}}}}]}],post:[{rules:[{id:'owner-b',kind:'policy',config:{policyRouting:{graph:{nodes:[{id:'switch',kind:'switch',cases:[{id:'one',value:'SECOND'}]}]}}}}]}]} as unknown as Workflow;
+  assert.equal(inspectionPortLabel(workflow,'policy-node:owner-a/switch','one'),'"FIRST"');
+  assert.equal(inspectionPortLabel(workflow,'policy-node:owner-b/switch','one'),'"SECOND"');
+  assert.equal(inspectionPortLabel(workflow,'policy-node:owner-b/switch','one',true),'one');
 });

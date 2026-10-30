@@ -42,7 +42,7 @@ def integer(minimum: int, maximum: int):
 Identifier = text(120)
 Name100 = text(100)
 ModelAlias = Annotated[str, Field(strict=True, pattern=r"^[a-zA-Z0-9][a-zA-Z0-9._-]{0,79}$")]
-RuleKind = Literal["keyword", "regex", "length", "llm", "pii", "json", "required"]
+RuleKind = Literal["keyword", "regex", "length", "llm", "pii", "json", "required", "policy"]
 
 
 class ContractModel(BaseModel):
@@ -63,6 +63,7 @@ class ExactModel(ContractModel):
 
 
 class RuleConfig(ContractModel):
+    policyRouting: PolicyRouting | None = None
     pattern: text(2000, 0, False) | None = None
     maxLength: integer(1, 40000) | None = None
     prompt: text(4000, 0, False) | None = None
@@ -82,6 +83,18 @@ class Rule(ContractModel):
     enabled: bool
     config: RuleConfig
 
+    @model_validator(mode="after")
+    def policy_check_contract(self):
+        if self.kind == "policy":
+            if self.id == "policy" or "/" in self.id or self.config.policyRouting is None:
+                raise ValueError("정책 검사 ID와 연결할 고정 정책 버전을 확인하세요.")
+            from .policy_checks import policy_routes
+            if any(route.get("action") == "respond" for route in policy_routes(self.config.policyRouting.model_dump(by_alias=True, exclude_none=True))):
+                raise ValueError("정책 검사 노드에서는 계속 또는 오류 경로만 지원합니다. 직접 응답은 기존 정책 분기에서만 사용할 수 있습니다.")
+        elif self.config.policyRouting is not None:
+            raise ValueError("정책 버전은 정책 검사 노드에만 연결할 수 있습니다.")
+        return self
+
 
 class RuleGroup(ContractModel):
     id: Identifier
@@ -89,6 +102,12 @@ class RuleGroup(ContractModel):
     mode: Literal["any", "all"]
     rules: Annotated[list[Rule], Field(min_length=1, max_length=12)]
     required: bool | None = None
+
+    @model_validator(mode="after")
+    def standalone_policy(self):
+        if any(rule.kind == "policy" for rule in self.rules) and len(self.rules) != 1:
+            raise ValueError("정책 검사는 독립된 검사 노드로 추가하세요.")
+        return self
 
 
 class FlowCondition(ExactModel):
@@ -131,7 +150,7 @@ class CanvasZone(ExactModel):
     id: Name100
     name: Name100
     color: Literal["slate", "blue", "green", "amber", "violet"]
-    nodeKeys: Annotated[list[text(150, trim=False)], Field(max_length=988)]
+    nodeKeys: Annotated[list[text(260, trim=False)], Field(max_length=1280)]
     x: Annotated[float, Field(ge=0, le=40000)]
     y: Annotated[float, Field(ge=0, le=40000)]
     width: Annotated[float, Field(ge=240, le=50000)]
@@ -140,15 +159,15 @@ class CanvasZone(ExactModel):
 
 class WorkflowLayout(ContractModel):
     version: integer(1, 1)
-    positions: dict[text(150, trim=False), Position]
+    positions: dict[text(260, trim=False), Position]
     zones: Annotated[list[CanvasZone], Field(max_length=32)] | None = None
-    pinnedKeys: Annotated[list[text(150, trim=False)], Field(max_length=124)] | None = None
+    pinnedKeys: Annotated[list[text(260, trim=False)], Field(max_length=1280)] | None = None
 
     @field_validator("positions")
     @classmethod
     def position_capacity(cls, value):
-        if len(value) > 988:
-            raise ValueError("노드 위치는 최대 988개까지 저장할 수 있습니다.")
+        if len(value) > 1280:
+            raise ValueError("노드 위치는 최대 1,280개까지 저장할 수 있습니다.")
         return value
 
     @field_validator("pinnedKeys")
@@ -220,6 +239,13 @@ class Workflow(ContractModel):
     graph: WorkflowGraph | None = None
     cloneSource: WorkflowCloneSource | None = None
     policyRouting: PolicyRouting | None = None
+
+    @model_validator(mode="after")
+    def policy_capacity(self):
+        count = int(self.policyRouting is not None) + sum(rule.kind == "policy" for group in self.pre + self.post for rule in group.rules)
+        if count > 12:
+            raise ValueError("정책 검사는 기존 정책 분기를 포함해 최대 12개까지 추가할 수 있습니다.")
+        return self
 
 
 class Connection(ContractModel):
@@ -542,6 +568,7 @@ class DatasetRow(ContractModel):
     expectedDecision: PolicyCode | None = None
     expectedRoute: Literal["main", "respond", "error"] | None = None
     expectedPolicyCode: PolicyCode | None = None
+    expectedPolicyNodeId: Identifier | None = None
     expectedPolicyFields: Annotated[list[PolicyPredicate], Field(min_length=1, max_length=12)] | None = None
 
     @field_validator("expectedPolicyFields")

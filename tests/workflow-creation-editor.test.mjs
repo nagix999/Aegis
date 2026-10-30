@@ -1,3 +1,4 @@
+import * as policyChecks from '../lib/workflow-policy-checks.ts';
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {readFile} from 'node:fs/promises';
@@ -24,14 +25,14 @@ function fixture(){
  const initial=initialState(),workflow={...structuredClone(initial.workflows[0]),pre:[1,2,3].map(check),post:[]};
  workflow.layout={version:1,positions:{input:{x:9000,y:9000}},zones:[]};
  const notices=[],changes=[];let sequence=0;
- const state={...layout,...zones,...graph,...creation,...connections,...history,structuredClone,JSON,Map,Set,crypto,makeRule,nodeCatalog,
-  workflow,connections:initial.connections,editingDisabled:false,history:history.emptyWorkflowHistory(),library:undefined,pendingInsert:undefined,creation:undefined,policyChooser:false,newPolicyKey:'',conditionChooser:false,conditionTarget:'text',insertError:'',panelMode:'node',libraryReturnMode:'node',selection:{kind:'main'},selectedKeys:[],selectedTemplates:[],zoneQuery:'',autoFitRequest:0,view:'builder',inspectorOpen:false,
+ const state={...policyChecks,...layout,...zones,...graph,...creation,...connections,...history,structuredClone,JSON,Map,Set,crypto,makeRule,nodeCatalog,
+  workflow,selectedPolicyScope:undefined,connections:initial.connections,editingDisabled:false,history:history.emptyWorkflowHistory(),library:undefined,pendingInsert:undefined,creation:undefined,policyChooser:false,newPolicyKey:'',conditionChooser:false,conditionTarget:'text',insertError:'',panelMode:'node',libraryReturnMode:'node',selection:{kind:'main'},selectedKeys:[],selectedTemplates:[],zoneQuery:'',autoFitRequest:0,view:'builder',inspectorOpen:false,
   editorRef:{current:null},inspectorRef:{current:null},pendingTextChange:{current:undefined},activeTextField:{current:undefined},
   id(prefix){return`${prefix}-editor-${++sequence}`;},notify(message){notices.push(message);},requestAnimationFrame(callback){callback();},
   onChange(next){state.workflow=next;changes.push(next);},revealSelection(selection){state.selection=selection;state.panelMode='node';state.inspectorOpen=true;}
  };
  Object.defineProperties(state,{zones:{get:()=>state.workflow.layout?.zones??[]},visibleNodes:{get:()=>layout.nodeDefinitions(state.workflow)},selectedZone:{get:()=>state.selection.kind==='zone'?state.workflow.layout?.zones?.find(zone=>zone.id===state.selection.id):undefined},creationTarget:{get:()=>state.creation?.targets.find(target=>target.edgeId===state.creation.edgeId)},libraryMinimum:{get:()=>state.library?.insert?.mode==='branch'?creation.previewParallelCheckOnEdge(state.workflow,state.library.insert.target).minimumNodes:1},libraryCapacity:{get:()=>36}});
- const properties={setInspectorTab:'inspectorTab',setPendingInsert:'pendingInsert',setInsertError:'insertError',setCreation:'creation',setLibrary:'library',setPolicyChooser:'policyChooser',setNewPolicyKey:'newPolicyKey',setConditionChooser:'conditionChooser',setConditionTarget:'conditionTarget',setLibraryReturnMode:'libraryReturnMode',setSelectedTemplates:'selectedTemplates',setLibraryQuery:'libraryQuery',setCategory:'category',setPanelMode:'panelMode',setInspectorOpen:'inspectorOpen',setView:'view',setAutoFitRequest:'autoFitRequest',setHistory:'history',setSelectedKeys:'selectedKeys',setSelection:'selection',setZoneQuery:'zoneQuery',setInitialPreset:'initialPreset',setGraphStage:'graphStage',setGraphControlId:'graphControlId',setGraphEdgeId:'graphEdgeId'};
+ const properties={setLibraryPolicyOwner:'libraryPolicyOwner',setInspectorTab:'inspectorTab',setPendingInsert:'pendingInsert',setInsertError:'insertError',setCreation:'creation',setLibrary:'library',setPolicyChooser:'policyChooser',setNewPolicyKey:'newPolicyKey',setConditionChooser:'conditionChooser',setConditionTarget:'conditionTarget',setLibraryReturnMode:'libraryReturnMode',setSelectedTemplates:'selectedTemplates',setLibraryQuery:'libraryQuery',setCategory:'category',setPanelMode:'panelMode',setInspectorOpen:'inspectorOpen',setView:'view',setAutoFitRequest:'autoFitRequest',setHistory:'history',setSelectedKeys:'selectedKeys',setSelection:'selection',setZoneQuery:'zoneQuery',setInitialPreset:'initialPreset',setGraphStage:'graphStage',setGraphControlId:'graphControlId',setGraphEdgeId:'graphEdgeId'};
  for(const [setter,key]of Object.entries(properties))state[setter]=value=>{state[key]=typeof value==='function'?value(state[key]):value;};
  vm.runInContext(code,vm.createContext(state));return{state,actions:state.actions,notices,changes};
 }

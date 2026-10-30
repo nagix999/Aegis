@@ -12,6 +12,7 @@ import { searchWorkflowNodes, type WorkflowSearchResult } from '@/lib/workflow-s
 import { canvasExecutionColors, canvasExecutionLabels, workflowExecutionView, type CanvasExecutionState } from '@/lib/workflow-execution-view';
 import { workflowPathFocus } from '@/lib/workflow-path-focus';
 import { getWorkflowCanvasLinks, type WorkflowCanvasLink } from '@/lib/workflow-policy-canvas';
+import { listWorkflowPolicyChecks, parsePolicyScopedId, policyScopedId, workflowPolicyNode, workflowPolicyCheck } from '@/lib/workflow-policy-checks';
 import { policyNodePorts } from '@/lib/policy-graph';
 
 export type CanvasPortCreationSource = {stage:'pre'|'post';from:string;port:'next'|'true'|'false';position:{x:number;y:number}};
@@ -54,11 +55,11 @@ export type WorkflowCanvasProps = {
   onViewportChange?: (viewport:CanvasViewport) => void;
   onAdd: (stage: 'pre' | 'post', groupId?: string, parallel?: boolean) => void; onRetry: () => void;
 };
-const icons = { keyword: Braces, regex: Regex, length: AlignLeft, llm: BrainCircuit, pii: ShieldCheck, json: FileJson, required: ListChecks };
+const icons = { keyword: Braces, regex: Regex, length: AlignLeft, llm: BrainCircuit, pii: ShieldCheck, json: FileJson, required: ListChecks, policy:ShieldCheck };
 const stageLabels = { pre: '요청', post: '응답' };
 const selected = (node: CanvasNode, selection?: WorkflowSelection) => Boolean(selection && node.kind === selection.kind && (!('id' in selection) || node.id === selection.id));
 
-type LinkSource = { stage: 'pre' | 'post'; endpoint: string; port: 'next' | 'true' | 'false' };
+type LinkSource = { stage: 'pre' | 'post'; endpoint: string; port: 'next' | 'true' | 'false'; policyNodeKey?:string };
 type Wire = { pointerId: number; source: LinkSource; x: number; y: number; clientX: number; clientY: number; moved: boolean; signature: string };
 type WirePreview = { source: LinkSource; point: { x: number; y: number }; targetKey?: string; target?: string; reason?: string; valid: boolean };
 type CanvasEdge = Omit<WorkflowCanvasLink,'id'> & { id?: string; kind: 'flow' | 'retry' | 'fork' | 'join' | 'policy' };
@@ -68,6 +69,7 @@ type Drag = { pointerId: number; key: string; keys: string[]; x: number; y: numb
 export function WorkflowCanvas({ workflow, connections, selection, disabled: interactionDisabled, readOnly = false, execution, inspection, progress, running = false, executionAttempt, stale, onSelect, onSearchSelect, onInspect, onLayout, onAdd, onRetry, onBackgroundSelect, onConnect, onSelectEdge, onPolicyConnect, onCreatePolicyFromPort, onSelectPolicyEdge, selectedPolicyEdgeId, onInsertNode, onBuildBranch, branchEligibility, notify, selectedKeys = [], onSelectedKeys, onGroupSelection, zoneSelectionIssue, zoneCompletionKeys = [], zoneCompletionIssue, onCompleteZoneSelection, onCreateFromPort, autoFitRequest, onAutoFitConsumed, onAddZone, onAddNode, connectionImpact, focusRequest, initialViewport, onViewportChange }: WorkflowCanvasProps) {
   const disabled = interactionDisabled || readOnly;
   const nodes = useMemo(() => nodeDefinitions(workflow), [workflow]);
+  const policyChecks=useMemo(()=>listWorkflowPolicyChecks(workflow),[workflow]);
   const positions = useMemo(() => resolveLayout(workflow), [workflow]);
   const [preview, setPreview] = useState<CanvasPositions>();
   const [zonePreview, setZonePreview] = useState<CanvasZone[]>();
@@ -111,7 +113,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const canConnect = !disabled && !readOnly && Boolean(onConnect);
   const canPolicyConnect = !disabled && Boolean(onPolicyConnect);
   useEffect(()=>{cancelPolicyWire(true);},[workflow.id,disabled,workflow.policyRouting?.policy.id,workflow.policyRouting?.policy.version]);
-  useEffect(()=>{const source=policySourceRef.current;if(source&&!workflow.policyRouting?.graph?.nodes.some(node=>node.id===source.id&&node.kind!=='switch'&&policyNodePorts(node).some(item=>item.port===source.port)))cancelPolicyWire(true);},[workflow.policyRouting?.graph]);
+  useEffect(()=>{const source=policySourceRef.current;if(source&&!validPolicySource(source))cancelPolicyWire(true);},[workflow]);
   const drag = useRef<Drag | undefined>(undefined);
   const suppressClick = useRef(false);
   const pan = useRef<Pan | undefined>(undefined);
@@ -131,9 +133,9 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   const parallelChoice=branchEligibility?.parallel||{valid:pickedKeys.length>=2&&pickedKeys.length<=4,reason:'같은 구간의 연속된 검사 2~4개를 선택하세요.'};
   const conditionChoice=branchEligibility?.condition||{valid:pickedKeys.length===2,reason:'조건 분기는 연속된 검사 2개를 선택하세요.'};
   const baseBounds = layoutBounds(nodes, visible, frames);
-  const switchSources=new Set(workflow.policyRouting?.graph?.nodes.filter(node=>node.kind==='switch').map(node=>node.id));
+  const switchSources=new Set(policyChecks.flatMap(scope=>scope.routing.graph?.nodes.filter(node=>node.kind==='switch').map(node=>policyScopedId(scope.id,node.id))??[]));
   const parallelCounts=new Map<string,number>();
-  for(const edge of workflow.policyRouting?.graph?.edges??[])if(switchSources.has(edge.from)){const key=`${edge.from}:${edge.to}`;parallelCounts.set(key,(parallelCounts.get(key)??0)+1);}
+  for(const scope of policyChecks)for(const edge of scope.routing.graph?.edges??[])if(switchSources.has(policyScopedId(scope.id,edge.from))){const key=`${scope.id}:${edge.from}:${edge.to}`;parallelCounts.set(key,(parallelCounts.get(key)??0)+1);}
   // Parallel case lanes need scroll space, without moving any saved node.
   const bounds = {...baseBounds,height:baseBounds.height+Math.max(0,...[...parallelCounts.values()].map(count=>count-1))*40};
   const fitLatest=useRef({workflowId:workflow.id,bounds});
@@ -506,7 +508,8 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   if (retry) for (const group of workflow.post) edges.push({ from: endpointKey('post', `group:${group.id}`), to: 'main', kind: 'retry' });
   const insertionPoints = new Map<string, { x: number; y: number } | undefined>();
   function connectionPoint(stage: 'pre' | 'post', endpoint: string, side: 'left' | 'right', port: string = 'next') {
-    const key = endpointKey(stage, endpoint);
+    let key = endpointKey(stage, endpoint);
+    if(side==='right'&&endpoint.startsWith('group:')){const scope=policyChecks.find(scope=>scope.rule?.enabled!==false&&scope.stage===stage&&`group:${scope.group?.id}`===endpoint);if(scope){const active=wire.current?.source??linkSource,preferred=active?.stage===stage&&active.endpoint===endpoint?active.policyNodeKey:undefined;const action=scope.routing.graph?.nodes.find(node=>node.kind==='action'&&node.action==='main');if(preferred&&visible[preferred])key=preferred;else if(action)key=`policy-node:${policyScopedId(scope.id,action.id)}`;}}
     const point = nodePort(visible[key], side);
     if (side === 'right' && endpoint.startsWith('control:') && (port === 'true' || port === 'false')) {
       // Two distinct ports follow the condition diamond's upper and lower edges.
@@ -570,16 +573,16 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   }
   function policyPoint(key: string, side: 'left'|'right', port?: string) {
     const point = nodePort(visible[key],side);
-    const definition=workflow.policyRouting?.graph?.nodes.find(node=>`policy-node:${node.id}`===key);
+    const definition=key.startsWith('policy-node:')?workflowPolicyNode(workflow,key.slice('policy-node:'.length))?.node:undefined;
     return side==='right'&&definition?.kind!=='switch'&&(port==='true'||port==='false')?{x:point.x-10,y:point.y+(port==='true'?-12:12)}:point;
   }
   function policyPortLabel(id:string,port:string) {
-    const node=workflow.policyRouting?.graph?.nodes.find(item=>item.id===id);
+    const node=workflowPolicyNode(workflow,id)?.node;
     return node?policyNodePorts(node).find(item=>item.port===port)?.label??'선택한 경로':'선택한 경로';
   }
   function canvasNodeName(key: string): string {
     if(key==='policy')return workflow.policyRouting?.policy.name || '정책 모델';
-    if(key.startsWith('policy-node:'))return workflow.policyRouting?.graph?.nodes.find(node=>`policy-node:${node.id}`===key)?.name || '정책 노드';
+    if(key.startsWith('policy-node:'))return workflowPolicyNode(workflow,key.slice('policy-node:'.length))?.node.name || '정책 노드';
     if(key==='input')return '최초 입력';if(key==='output')return '최종 출력';if(key==='main')return '응답 생성 모델';
     const node=nodes.find(node=>node.key===key),group=node?.stage?workflow[node.stage].find(group=>group.id===node.groupId):undefined;
     return node?.kind==='rule'?group?.rules.find(rule=>rule.id===node.id)?.name || '검사':node?.kind==='control'&&node.stage?stageGraphs[node.stage].nodes.find(control=>control.id===node.id)?.name || '제어 노드':group?.name || key;
@@ -588,20 +591,21 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     policyWire.current=undefined;setPolicyWirePoint(undefined);
     if(clear){policySourceRef.current=undefined;setPolicySource(undefined);}
   }
+  function validPolicySource(source:NonNullable<typeof policySource>){const node=workflowPolicyNode(workflow,source.id)?.node;return Boolean(node&&node.kind!=='switch'&&policyNodePorts(node).some(item=>item.port===source.port));}
   function pickPolicySource(source: NonNullable<typeof policySource>) {
-    if(!canPolicyConnect||!workflow.policyRouting?.graph?.nodes.some(node=>node.id===source.id&&node.kind!=='switch'&&policyNodePorts(node).some(item=>item.port===source.port)))return;
+    if(!canPolicyConnect||!validPolicySource(source))return;
     cancelWire(true);setPendingLink();
     if(policySourceRef.current?.id===source.id&&policySourceRef.current.port===source.port){cancelPolicyWire(true);return;}
     policySourceRef.current=source;setPolicySource(source);
-    const node=workflow.policyRouting?.graph?.nodes.find(node=>node.id===source.id),label=node?policyNodePorts(node).find(item=>item.port===source.port)?.label:source.port;
+    const node=workflowPolicyNode(workflow,source.id)?.node,label=node?policyNodePorts(node).find(item=>item.port===source.port)?.label:source.port;
     setAnnouncement(`${canvasNodeName(`policy-node:${source.id}`)}의 ${label} 경로에 연결할 정책 노드를 선택하세요.`);
   }
   function connectPolicyNode(node: CanvasNode, source=policySourceRef.current) {
     if(!canPolicyConnect||!onPolicyConnect||!source)return;
-    const from=workflow.policyRouting?.graph?.nodes.find(node=>node.id===source.id),target=node.kind==='policy-node'?workflow.policyRouting?.graph?.nodes.find(item=>item.id===node.id):undefined;
-    const valid=from&&from.kind!=='switch'&&target&&from.id!==target.id&&policyNodePorts(from).some(item=>item.port===source.port);
+    const sourceContext=workflowPolicyNode(workflow,source.id),targetContext=node.kind==='policy-node'?workflowPolicyNode(workflow,node.id):undefined,from=sourceContext?.node,target=targetContext?.node;
+    const valid=sourceContext?.scope.id===targetContext?.scope.id&&from&&from.kind!=='switch'&&target&&from.id!==target.id&&policyNodePorts(from).some(item=>item.port===source.port);
     if(!valid){setAnnouncement('분기의 출력 경로를 다른 분기 또는 액션에 연결하세요.');return;}
-    try{onPolicyConnect(from.id,target.id,source.port);cancelPolicyWire(true);setAnnouncement('정책 경로를 연결했습니다. 저장 전 설정 점검을 확인하세요.');}
+    try{onPolicyConnect(source.id,node.id,source.port);cancelPolicyWire(true);setAnnouncement('정책 경로를 연결했습니다. 저장 전 설정 점검을 확인하세요.');}
     catch(error){const message=error instanceof Error?error.message:'정책 경로를 연결하지 못했습니다.';setAnnouncement(message);notify?.(message);}
   }
   function startPolicyWire(event: PointerEvent<HTMLButtonElement>,source: NonNullable<typeof policySource>) {
@@ -617,17 +621,22 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   function finishPolicyWire(event: PointerEvent<HTMLButtonElement>) {
     const current=policyWire.current;if(!current||current.pointerId!==event.pointerId)return;
     policyWire.current=undefined;setPolicyWirePoint(undefined);
-    if(current.moved){suppressPolicyClick.current=true;const point=worldPoint(event.clientX,event.clientY);const candidates=nodes.filter(node=>node.kind==='policy-node'&&node.id!==current.source.id&&point.x>=visible[node.key].x-10&&point.x<=visible[node.key].x+NODE_WIDTH+10&&point.y>=visible[node.key].y-10&&point.y<=visible[node.key].y+NODE_HEIGHT+10).sort((left,right)=>Math.hypot(point.x-visible[left.key].x,point.y-visible[left.key].y)-Math.hypot(point.x-visible[right.key].x,point.y-visible[right.key].y));if(candidates[0])connectPolicyNode(candidates[0],current.source);else if(onCreatePolicyFromPort){cancelPolicyWire(true);onCreatePolicyFromPort({from:current.source.id,port:current.source.port,position:point});}else setAnnouncement('정책 노드 위에 놓아 연결하세요.');}
+    if(current.moved){suppressPolicyClick.current=true;const point=worldPoint(event.clientX,event.clientY);const candidates=nodes.filter(node=>node.kind==='policy-node'&&parsePolicyScopedId(node.id).ownerId===parsePolicyScopedId(current.source.id).ownerId&&node.id!==current.source.id&&point.x>=visible[node.key].x-10&&point.x<=visible[node.key].x+NODE_WIDTH+10&&point.y>=visible[node.key].y-10&&point.y<=visible[node.key].y+NODE_HEIGHT+10).sort((left,right)=>Math.hypot(point.x-visible[left.key].x,point.y-visible[left.key].y)-Math.hypot(point.x-visible[right.key].x,point.y-visible[right.key].y));if(candidates[0])connectPolicyNode(candidates[0],current.source);else if(onCreatePolicyFromPort){cancelPolicyWire(true);onCreatePolicyFromPort({from:current.source.id,port:current.source.port,position:point});}else setAnnouncement('정책 노드 위에 놓아 연결하세요.');}
     if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);
   }
   function renderPolicyPorts() {
     if(!canPolicyConnect)return null;
     const hit=Math.max(28,28/zoom);
     return nodes.filter(node=>node.kind==='policy-node').flatMap(node=>{
-      const definition=workflow.policyRouting?.graph?.nodes.find(item=>item.id===node.id);if(!definition)return [];
+      const context=workflowPolicyNode(workflow,node.id),definition=context?.node;if(!definition)return [];
       const inputPoint=policyPoint(node.key,'left'),inputLeft=inputPoint.x+7-hit;
       const input=[<button key={`${node.key}-in`} type="button" data-policy-connect-target={node.id} className="wc-graph-port target policy-port" style={{left:inputLeft,top:inputPoint.y-hit/2,width:hit,height:hit,pointerEvents:policySource?'auto':'none'}} tabIndex={policySource?0:-1} aria-disabled={!policySource} aria-label={`${definition.name} 정책 노드에 연결`} onClick={event=>{event.stopPropagation();connectPolicyNode(node);}}><span style={{position:'absolute',left:inputPoint.x-inputLeft-4.5,top:hit/2-4.5}}/></button>];
-      if(definition.kind==='action'||definition.kind==='switch')return input;
+      if(definition.kind==='action'){
+        if(definition.action!=='main'||context?.scope.id==='policy'||context?.scope.rule?.enabled===false||!context?.scope.group||!canConnect)return input;
+        const stage=context.scope.stage,endpoint=`group:${context.scope.group.id}`,port='next' as const,source={stage,endpoint,port,policyNodeKey:node.key},point=policyPoint(node.key,'right'),left=point.x-7,picked=linkSource?.stage===stage&&linkSource.endpoint===endpoint;
+        return [...input,<button key={`${node.key}-continue`} type="button" data-connect-port={`${stage}:${endpoint}:next`} className={`wc-graph-port source next ${picked?'picked':''}`} style={{left,top:point.y-hit/2,width:hit,height:hit}} aria-label={`${definition.name}의 다음 검사 연결 시작`} aria-pressed={picked} onPointerDown={event=>startWire(event,source)} onPointerMove={moveWire} onPointerUp={finishWire} onPointerCancel={()=>cancelWire(true)} onLostPointerCapture={()=>cancelWire(true)} onClick={event=>{event.stopPropagation();if(suppressWireClick.current&&event.detail!==0){suppressWireClick.current=false;return;}chooseSource(source);}}><span style={{position:'absolute',left:point.x-left-4.5,top:hit/2-4.5}}/></button>];
+      }
+      if(definition.kind==='switch')return input;
       // Expand minimum hit areas outward. Centered areas cover the card body
       // when zoomed out and can turn a settings click into connection intent.
       return [...input,...(['true','false'] as const).map(port=>{const point=policyPoint(node.key,'right',port),source={id:node.id,port},picked=policySource?.id===node.id&&policySource.port===port,left=point.x-7,top=port==='true'?point.y+12-hit:point.y-12;return <button key={`${node.key}-${port}`} type="button" data-policy-connect-port={`${node.id}:${port}`} className={`wc-graph-port source policy-port ${port} ${picked?'picked':''}`} aria-label={`${definition.name}의 ${port==='true'?'참':'거짓'} 정책 경로 연결 시작`} aria-pressed={picked} style={{left,top,width:hit,height:hit}} onPointerDown={event=>startPolicyWire(event,source)} onPointerMove={movePolicyWire} onPointerUp={finishPolicyWire} onPointerCancel={()=>cancelPolicyWire(true)} onLostPointerCapture={()=>cancelPolicyWire()} onClick={event=>{event.stopPropagation();if(suppressPolicyClick.current&&event.detail!==0){suppressPolicyClick.current=false;return;}pickPolicySource(source);}}><span style={{position:'absolute',left:point.x-left-4.5,top:point.y-top-4.5}}/><small style={{left:point.x-left+8,top:point.y-top-6}}>{port==='true'?'참':'거짓'}</small></button>;})];
@@ -711,8 +720,9 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
         const activeSource = wirePreview?.source || linkSource;
         const check = activeSource ? activeSource.stage === stage ? checkConnection(activeSource, endpoint) : { valid: false, reason: '요청 흐름과 응답 흐름은 서로 연결할 수 없습니다.' } : undefined;
         const inputPoint=connectionPoint(stage,endpoint,'left'),inputLeft=inputPoint.x+7-hitSize;
-        const input = endpoint === 'start' ? [] : [<button key={`${stage}-${endpoint}-in`} type="button" data-connect-port={`${stage}:${endpoint}:in`} className={`wc-graph-port target ${check ? check.valid ? 'available' : 'unavailable' : ''} ${wirePreview?.valid && wirePreview.target === endpoint && wirePreview.source.stage === stage ? 'snapped' : ''}`} style={{ left:inputLeft,top:inputPoint.y-hitSize/2, width:hitSize, height:hitSize }} aria-label={`${label}에 연결${check?.reason ? `: ${check.reason}` : ''}`} aria-disabled={check?.valid === false} title={check?.reason || `${label}에 연결`} onClick={event => { event.stopPropagation(); chooseTarget(stage, endpoint); }}><span style={{position:'absolute',left:inputPoint.x-inputLeft-4.5,top:hitSize/2-4.5}}/></button>];
-        const output = endpoint === 'end' ? [] : outputs.map(port => {
+        const input = endpoint === 'start' ? [] : [<button key={`${stage}-${endpoint}-in`} type="button" data-connect-port={`${stage}:${endpoint}:in`} className={`wc-graph-port target ${check ? check.valid ? 'available' : 'unavailable' : ''} ${wirePreview?.valid && wirePreview.target === endpoint && wirePreview.source.stage === stage ? 'snapped' : ''}`} style={{ left:inputLeft,top:inputPoint.y-hitSize/2, width:hitSize, height:hitSize,pointerEvents:activeSource?'auto':'none' }} tabIndex={activeSource?0:-1} aria-label={`${label}에 연결${check?.reason ? `: ${check.reason}` : ''}`} aria-disabled={check?.valid === false} title={check?.reason || `${label}에 연결`} onClick={event => { event.stopPropagation(); chooseTarget(stage, endpoint); }}><span style={{position:'absolute',left:inputPoint.x-inputLeft-4.5,top:hitSize/2-4.5}}/></button>];
+        const policyGroup=endpoint.startsWith('group:')?workflow[stage].find(group=>`group:${group.id}`===endpoint&&group.rules.length===1&&group.rules[0].kind==='policy'&&group.rules[0].enabled):undefined;
+        const output = endpoint === 'end'||policyGroup ? [] : outputs.map(port => {
           const point = connectionPoint(stage, endpoint, 'right', port);
           const picked = linkSource?.stage === stage && linkSource.endpoint === endpoint && linkSource.port === port;
           const portName = port === 'true' ? '참' : port === 'false' ? '거짓' : '다음';
@@ -737,13 +747,13 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       const bottom = flowBounds.height - flowBounds.offsetY - 40;
       return { d: `M ${sx} ${sy} H ${source.x + NODE_WIDTH + 16} V ${bottom} H ${rail} V ${end.y} H ${end.x}`, sx, sy, tx: end.x, ty: end.y, points: [{ x: sx, y: sy }, { x: source.x + NODE_WIDTH + 16, y: sy }, { x: source.x + NODE_WIDTH + 16, y: bottom }, { x: rail, y: bottom }, { x: rail, y: end.y }, end] };
     }
-    const start = edge.stage && edge.graphFrom ? connectionPoint(edge.stage, edge.graphFrom, 'right', edge.port) : edge.policyEdgeId ? policyPoint(edge.from,'right',edge.port) : nodePort(visible[edge.from], 'right');
+    const start = edge.kind==='policy'?policyPoint(edge.from,'right',edge.port):edge.stage && edge.graphFrom ? connectionPoint(edge.stage, edge.graphFrom, 'right', edge.port) : edge.policyEdgeId ? policyPoint(edge.from,'right',edge.port) : nodePort(visible[edge.from], 'right');
     const targetPort = edge.stage && edge.graphTo ? connectionPoint(edge.stage, edge.graphTo, 'left') : nodePort(visible[edge.to], 'left');
     const end = { ...targetPort, x:targetPort.x-8 };
     const obstacles = nodes.map(node => ({ ...visible[node.key], width: NODE_WIDTH, height: NODE_HEIGHT, key: node.key }));
     const exit = Math.max(source.x + source.width, ...obstacles.filter(item => item.x < source.x + source.width && item.x + item.width > source.x).map(item => item.x + item.width)) + 16;
     const entry = Math.min(target.x, ...obstacles.filter(item => item.x < target.x + target.width && item.x + item.width > target.x).map(item => item.x)) - 16;
-    const switchSource=edge.policyEdgeId&&workflow.policyRouting?.graph?.nodes.some(node=>node.kind==='switch'&&`policy-node:${node.id}`===edge.from);
+    const switchSource=edge.policyEdgeId&&edge.from.startsWith('policy-node:')&&workflowPolicyNode(workflow,edge.from.slice('policy-node:'.length))?.node.kind==='switch';
     const siblings=switchSource?edges.filter(item=>item.policyEdgeId&&item.from===edge.from&&item.to===edge.to):[];
     if(siblings.length>1){
       const index=siblings.findIndex(item=>item.policyEdgeId===edge.policyEdgeId);
@@ -820,11 +830,12 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const state:CanvasExecutionState=edge.kind==='retry'?stale&&executionView.hasExecution?'stale':executionView.retryNodes.has(edge.from)?executionView.nodes.main==='running'?'running':'completed':executionView.hasExecution?'skipped':'idle':executionView.edges[edge.id||`${edge.stage}:${edge.graphId}`]||'idle';
     const seen = state==='completed'||state==='running'||state==='block'||state==='error';
     const branch = edge.port === 'true' ? '참' : edge.port === 'false' ? '거짓' : '';
-    const switchNode=edge.policyEdgeId?workflow.policyRouting?.graph?.nodes.find(node=>node.kind==='switch'&&`policy-node:${node.id}`===edge.from):undefined;
+    const edgeSource=edge.policyEdgeId&&edge.from.startsWith('policy-node:')?workflowPolicyNode(workflow,edge.from.slice('policy-node:'.length))?.node:undefined;
+    const switchNode=edgeSource?.kind==='switch'?edgeSource:undefined;
     const edgeSelected=Boolean(edge.policyEdgeId&&edge.policyEdgeId===selectedPolicyEdgeId);
     const showBranchLabel=Boolean(edge.label||branch)&&(!switchNode||edgeSelected);
-    const description = edge.stage && edge.graphFrom && edge.graphTo ? `${canvasEndpointLabel(edge.stage, edge.graphFrom)}에서 ${canvasEndpointLabel(edge.stage, edge.graphTo)}로${branch ? ` ${branch} 경로` : ''}` : edge.kind === 'policy' ? `${canvasNodeName(edge.from)}에서 ${canvasNodeName(edge.to)}로${edge.label?` ${edge.label} 경로`:''}` : edge.kind === 'retry' ? `단계 차단 조건에 해당하면 최대 ${maxRetries}회 재작성` : edge.kind === 'fork' ? '같은 입력을 각 검사에서 병렬로 확인' : '병렬 검사 결과를 모아 단계 차단 조건으로 판단';
-    const edit = () => { if(edge.policyEdgeId&&onSelectPolicyEdge)onSelectPolicyEdge(edge.policyEdgeId);else if(edge.kind==='policy')onSelect(edge.from.startsWith('policy-node:')?{kind:'policy-node',id:edge.from.slice('policy-node:'.length)}:{kind:'policy'});else if (edge.stage && edge.graphId) onSelectEdge?.(edge.stage, edge.graphId); };
+    const description = edge.kind==='policy'?`${canvasNodeName(edge.from)}에서 ${canvasNodeName(edge.to)}로${edge.label?` ${edge.label} 경로`:''}`:edge.stage && edge.graphFrom && edge.graphTo ? `${canvasEndpointLabel(edge.stage, edge.graphFrom)}에서 ${canvasEndpointLabel(edge.stage, edge.graphTo)}로${branch ? ` ${branch} 경로` : ''}` : edge.kind === 'retry' ? `단계 차단 조건에 해당하면 최대 ${maxRetries}회 재작성` : edge.kind === 'fork' ? '같은 입력을 각 검사에서 병렬로 확인' : '병렬 검사 결과를 모아 단계 차단 조건으로 판단';
+    const edit = () => { if(edge.policyEdgeId&&onSelectPolicyEdge)onSelectPolicyEdge(edge.policyEdgeId);else if(edge.graphId&&edge.stage&&onSelectEdge)onSelectEdge(edge.stage,edge.graphId);else if(edge.kind==='policy')onSelect(edge.from.startsWith('policy-node:')?{kind:'policy-node',id:edge.from.slice('policy-node:'.length)}:edge.from.startsWith('rule:')?{kind:'rule',id:edge.from.slice(5)}:{kind:'policy'});else if (edge.stage && edge.graphId) onSelectEdge?.(edge.stage, edge.graphId); };
     const editable=Boolean(edge.kind==='policy'||edge.graphId&&edge.stage&&onSelectEdge);
     const insertion = !disabled && !readOnly && onInsertNode && edge.kind === 'flow' && edge.stage && edge.graphId ? edgeInsertPoint(edge) : undefined;
     const parallelSwitch=switchNode&&edges.filter(item=>item.policyEdgeId&&item.from===edge.from&&item.to===edge.to).length>1;
@@ -861,8 +872,10 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
   function renderNode(node: CanvasNode) {
     const group = node.stage ? workflow[node.stage].find(item => item.id === node.groupId) : undefined;
     const rule = group?.rules.find(item => item.id === node.id);
-    const policy = workflow.policyRouting?.policy;
-    const policyNode=node.kind==='policy-node'?workflow.policyRouting?.graph?.nodes.find(item=>item.id===node.id):undefined;
+    const policyContext=node.kind==='policy-node'?workflowPolicyNode(workflow,node.id):undefined;
+    const policyModel=node.kind==='policy'||rule?.kind==='policy';
+    const policy=rule?.kind==='policy'?rule.config.policyRouting?.policy:workflow.policyRouting?.policy;
+    const policyNode=policyContext?.node;
     const policyCondition=policyNode&&(policyNode.kind==='branch'||policyNode.kind==='rule')?policyNode.condition.predicates.map(predicate=>`${predicate.path||'출력 전체'} ${predicate.operator}`).join(policyNode.condition.mode==='all'?' 그리고 ':' 또는 '):'';
     const isPolicy=node.kind==='policy'||node.kind==='policy-node';
     const isPolicyCondition=Boolean(policyNode&&policyNode.kind!=='action');
@@ -871,24 +884,24 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
     const control = node.kind === 'control' && node.stage ? stageGraphs[node.stage].nodes.find(item => item.id === node.id) : undefined;
     const controlKind = control?.kind || node.controlKind;
     const kind = isPolicy ? node.kind==='policy'?'policy':isPolicySwitch?'policy-switch':isPolicyCondition?'policy-condition':'policy-action' : terminal ? node.kind : node.kind === 'main' ? 'main' : node.kind === 'group' ? 'composite' : controlKind || rule?.kind || 'keyword';
-    const Icon = node.kind==='policy'?ShieldCheck:isPolicySwitch?Split:isPolicyCondition?GitBranch:policyNode?.kind==='action'?Zap:node.kind === 'input' ? LogIn : node.kind === 'output' ? LogOut : node.kind === 'main' ? BrainCircuit : node.kind === 'group' ? Layers3 : controlKind === 'condition' ? GitBranch : controlKind === 'fork' ? Split : controlKind === 'join' ? Merge : icons[rule?.kind || 'keyword'];
-    const title = node.kind==='policy'?policy?.name||'정책 모델':policyNode?policyNode.name:node.kind === 'input' ? '최초 입력' : node.kind === 'output' ? '최종 출력' : node.kind === 'main' ? main ? connectionLabel(main.name) : '응답 모델 선택' : node.kind === 'group' ? group?.name || '검사 조합' : control?.name || rule?.name || '';
-    const subtitle = node.kind==='policy'?`${policy?.connectionSnapshot?.model||'정책 분류 모델'} / 고정 버전 ${policy?.version??1}`:policyNode?.kind==='action'?policyNode.action==='main'?'Main LLM으로 응답 생성':policyNode.action==='respond'?'지정 응답을 응답 검사로 전달':`오류 반환 ${policyNode.errorCode||''}`:policyNode?.kind==='switch'?`${policyNode.path||'필드를 선택하세요'} / 비교값 ${policyNode.cases.length}개와 기본 경로`:policyNode?policyCondition:node.kind === 'input' ? '요청 메시지와 대화 내용' : node.kind === 'output' ? '검사를 통과한 최종 응답 반환' : node.kind === 'main' ? main?.mode === 'demo' ? '예제 모드의 고정 응답' : main?.model || '모델 서버를 연결하세요' : node.kind === 'group' ? `검사 조합 ${group?.rules.length || 0}개, ${group?.mode === 'all' ? '모두 위반하면 차단' : '하나라도 위반하면 차단'}` : controlKind === 'condition' ? '조건에 따라 참과 거짓 경로 선택' : controlKind === 'fork' ? '연결한 경로를 병렬로 실행' : controlKind === 'join' ? '병렬 경로의 실행 결과 합류' : rule ? ruleKindLabels[rule.kind] : '';
+    const Icon = policyModel?ShieldCheck:isPolicySwitch?Split:isPolicyCondition?GitBranch:policyNode?.kind==='action'?Zap:node.kind === 'input' ? LogIn : node.kind === 'output' ? LogOut : node.kind === 'main' ? BrainCircuit : node.kind === 'group' ? Layers3 : controlKind === 'condition' ? GitBranch : controlKind === 'fork' ? Split : controlKind === 'join' ? Merge : icons[rule?.kind || 'keyword'];
+    const title = policyModel?(rule?.name||policy?.name||'정책 모델'):policyNode?policyNode.name:node.kind === 'input' ? '최초 입력' : node.kind === 'output' ? '최종 출력' : node.kind === 'main' ? main ? connectionLabel(main.name) : '응답 모델 선택' : node.kind === 'group' ? group?.name || '검사 조합' : control?.name || rule?.name || '';
+    const subtitle = policyModel?`${policy?.connectionSnapshot?.model||'정책 분류 모델'} / 고정 버전 ${policy?.version??1}`:policyNode?.kind==='action'?policyNode.action==='main'?(policyContext?.scope.id==='policy'?'Main LLM으로 응답 생성':'다음 검사 계속'):policyNode.action==='respond'?'지정 응답을 응답 검사로 전달':`오류 반환 ${policyNode.errorCode||''}`:policyNode?.kind==='switch'?`${policyNode.path||'필드를 선택하세요'} / 비교값 ${policyNode.cases.length}개와 기본 경로`:policyNode?policyCondition:node.kind === 'input' ? '요청 메시지와 대화 내용' : node.kind === 'output' ? '검사를 통과한 최종 응답 반환' : node.kind === 'main' ? main?.mode === 'demo' ? '예제 모드의 고정 응답' : main?.model || '모델 서버를 연결하세요' : node.kind === 'group' ? `검사 조합 ${group?.rules.length || 0}개, ${group?.mode === 'all' ? '모두 위반하면 차단' : '하나라도 위반하면 차단'}` : controlKind === 'condition' ? '조건에 따라 참과 거짓 경로 선택' : controlKind === 'fork' ? '연결한 경로를 병렬로 실행' : controlKind === 'join' ? '병렬 경로의 실행 결과 합류' : rule ? ruleKindLabels[rule.kind] : '';
     const traces = terminal ? undefined : execution?.traces.filter(trace => (isPolicy?trace.traceType==='policy'&&trace.ruleId===(node.kind==='policy'?'policy':`policy:${node.id}`):trace.traceType!=='policy'&&(node.kind === 'main' ? trace.stage === 'main' : trace.ruleId === node.id && trace.stage === node.stage))&&(trace.stage==='pre'||(trace.attempt??1)===executionView.postAttempt));
     const trace = traces?.at(-1);
     const executionState=executionView.nodes[node.key]||'idle';
     const status = executionView.hasExecution?executionState==='completed'?(node.kind==='output'?'반환 완료':node.kind==='main'?'생성 완료':'완료'):canvasExecutionLabels[executionState]:'';
     const statusTone = executionState==='completed'?'allow':executionState;
-    const badge = rule && !rule.enabled ? { text: '꺼짐', tone: 'off' } : status ? { text: status, tone: statusTone } : node.kind==='policy'?{text:`v${policy?.version??1}`,tone:'policy'}:node.kind === 'main' && main?.mode === 'demo' ? { text: '예제', tone: 'demo' } : node.kind === 'group' ? { text: '검사 조합', tone: 'composite' } : undefined;
+    const badge = rule && !rule.enabled ? { text: '꺼짐', tone: 'off' } : status ? { text: status, tone: statusTone } : policyModel?{text:`v${policy?.version??1}`,tone:'policy'}:node.kind === 'main' && main?.mode === 'demo' ? { text: '예제', tone: 'demo' } : node.kind === 'group' ? { text: '검사 조합', tone: 'composite' } : undefined;
     const position = visible[node.key];
     const pinned=workflow.layout?.pinnedKeys?.some(key=>visibleLayoutKey(workflow,key)===node.key);
-    const membership = node.kind==='policy'?'정책 모델 설정':policyNode?isPolicySwitch?'Switch 분기 설정':isPolicyCondition?'조건 분기 설정':'정책 액션 설정':node.kind === 'input' ? '검사 시작점' : node.kind === 'output' ? '응답 반환점' : node.kind === 'main' ? '응답 생성' : node.kind === 'control' ? `${stageLabels[node.stage!]} 흐름` : `${stageLabels[node.stage!]} 검사`;
+    const membership = policyModel?(node.kind==='policy'?'정책 모델 설정':`${node.stage?stageLabels[node.stage]+' ':''}정책 모델 설정`):policyNode?isPolicySwitch?'Switch 분기 설정':isPolicyCondition?'조건 분기 설정':'정책 액션 설정':node.kind === 'input' ? '검사 시작점' : node.kind === 'output' ? '응답 반환점' : node.kind === 'main' ? '응답 생성' : node.kind === 'control' ? `${stageLabels[node.stage!]} 흐름` : `${stageLabels[node.stage!]} 검사`;
     const source = canConnect ? wirePreview?.source || linkSource : undefined;
     const isSource = source && endpointKey(source.stage, source.endpoint) === node.key;
     const target = source && !isSource ? targetCheck(node, source) : undefined;
     const policyOrigin=policySource?.id===node.id&&node.kind==='policy-node';
-    const policyFrom=workflow.policyRouting?.graph?.nodes.find(item=>item.id===policySource?.id);
-    const policyTarget=policySource&&!policyOrigin?node.kind==='policy-node'&&Boolean(policyFrom&&policyFrom.kind!=='action'&&policyNode):undefined;
+    const policyFrom=policySource?workflowPolicyNode(workflow,policySource.id):undefined;
+    const policyTarget=policySource&&!policyOrigin?node.kind==='policy-node'&&Boolean(policyFrom&&policyFrom.node.kind!=='action'&&policyNode&&policyFrom.scope.id===policyContext?.scope.id):undefined;
     const connectingClass = policyOrigin||isSource ? 'link-origin' : policyTarget!==undefined?policyTarget?'link-target':'link-unavailable':target ? target.valid ? 'link-target' : 'link-unavailable' : '';
     const targetHint = policyTarget!==undefined?policyTarget?'정책 연결 대상으로 선택':'이 정책 경로의 연결 대상이 아닙니다.':target ? target.valid ? '연결 대상으로 선택' : target.reason : '';
     const impactProblems=connectionImpact?.problems.filter(problem=>endpointKey(connectionImpact.stage,problem.endpoint)===node.key)||[];
@@ -904,8 +917,8 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       onClick={event => activate(event, node)} onPointerDown={event => start(event, node)} onPointerMove={update} onPointerUp={finish}
       onPointerCancel={cancelDrag} onLostPointerCapture={cancelDrag} onKeyDown={event => keyboard(event, node)}>
       <span className="wc-icon-wrap" style={{ width: NODE_ICON_SIZE, height: NODE_ICON_SIZE }}>
-        {executionView.hasExecution&&<svg className="wc-execution-ring" viewBox="0 0 68 68" aria-hidden="true">{node.kind === 'main'||node.kind==='policy' ? <polygon points="18,4 50,4 64,34 50,64 18,64 4,34" /> : controlKind === 'condition'||isPolicyCondition ? <polygon points="34,4 64,34 34,64 4,34" /> : node.kind === 'group' ? <rect x="4" y="4" width="60" height="60" rx="12" /> : terminal ? <rect x="4" y="4" width="60" height="60" rx="6" /> : <circle cx="34" cy="34" r="30" />}</svg>}
-        <svg className="wc-selection-ring" viewBox="0 0 68 68" aria-hidden="true">{node.kind === 'main'||node.kind==='policy' ? <polygon points="18,3 50,3 65,34 50,65 18,65 3,34" /> : controlKind === 'condition'||isPolicyCondition ? <polygon points="34,3 65,34 34,65 3,34" /> : node.kind === 'group' ? <rect x="3" y="3" width="62" height="62" rx="13" /> : terminal ? <rect x="3" y="3" width="62" height="62" rx="7" /> : <circle cx="34" cy="34" r="31" />}</svg>
+        {executionView.hasExecution&&<svg className="wc-execution-ring" viewBox="0 0 68 68" aria-hidden="true">{node.kind === 'main'||policyModel ? <polygon points="18,4 50,4 64,34 50,64 18,64 4,34" /> : controlKind === 'condition'||isPolicyCondition ? <polygon points="34,4 64,34 34,64 4,34" /> : node.kind === 'group' ? <rect x="4" y="4" width="60" height="60" rx="12" /> : terminal ? <rect x="4" y="4" width="60" height="60" rx="6" /> : <circle cx="34" cy="34" r="30" />}</svg>}
+        <svg className="wc-selection-ring" viewBox="0 0 68 68" aria-hidden="true">{node.kind === 'main'||policyModel ? <polygon points="18,3 50,3 65,34 50,65 18,65 3,34" /> : controlKind === 'condition'||isPolicyCondition ? <polygon points="34,3 65,34 34,65 3,34" /> : node.kind === 'group' ? <rect x="3" y="3" width="62" height="62" rx="13" /> : terminal ? <rect x="3" y="3" width="62" height="62" rx="7" /> : <circle cx="34" cy="34" r="31" />}</svg>
         <span className="wc-kind-icon"><Icon size={25} strokeWidth={1.8} /></span>
       </span>
       {node.stage&&<span className="wc-node-stage" aria-hidden="true">{isPolicy?node.kind==='policy'?'정책 모델':isPolicySwitch?'Switch 분기':isPolicyCondition?'조건 분기':'정책 액션':stageLabels[node.stage]}</span>}
@@ -913,7 +926,7 @@ export function WorkflowCanvas({ workflow, connections, selection, disabled: int
       {selectionMode && <span className={`wc-selection-check ${pickedKeys.includes(node.key) ? 'checked' : ''}`} aria-hidden="true">{pickedKeys.includes(node.key) && <Check size={10} />}</span>}
       {badge && !executionView.hasExecution && <span className={`wc-status ${badge.tone}`} title={badge.text}>{badge.text}</span>}
       {impactProblems.length>0&&<span className="wc-impact-badge" aria-hidden="true">연결 확인</span>}
-    </button>{badge&&executionView.hasExecution&&<button type="button" className={`wc-status wc-inspect-status ${badge.tone}`} style={{left:position.x+NODE_WIDTH-51,top:position.y}} title={`${title}: ${badge.text}. 실행 내역 보기`} aria-label={`${title} 실행 내역`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();const target:WorkflowSelection=node.kind==='rule'||node.kind==='group'||node.kind==='control'||node.kind==='policy-node'?{kind:node.kind,id:node.id}:{kind:node.kind};(onInspect||onSelect)(target);}}>{badge.text}</button>}</Fragment>;
+    </button>{badge&&executionView.hasExecution&&<button type="button" className={`wc-status wc-inspect-status ${badge.tone}`} style={{left:position.x+NODE_WIDTH/2-9,top:position.y-12}} title={`${title}: ${badge.text}. 실행 내역 보기`} aria-label={`${title} 실행 내역`} onPointerDown={event=>event.stopPropagation()} onClick={event=>{event.stopPropagation();const target:WorkflowSelection=node.kind==='rule'||node.kind==='group'||node.kind==='control'||node.kind==='policy-node'?{kind:node.kind,id:node.id}:{kind:node.kind};(onInspect||onSelect)(target);}}>{badge.text}</button>}</Fragment>;
   }
   return <section className={`wc-shell ${disabled ? 'locked' : ''}`} aria-label="워크플로우 배치">
     <div className="wc-toolbar">

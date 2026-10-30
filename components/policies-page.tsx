@@ -8,6 +8,7 @@ import type { PolicyDefinition, PolicyRevision } from '@/lib/aegis-types';
 import { policyDefinitionErrors, policyOutputSchema } from '@/lib/policy-routing';
 import { checkPolicyServerCompatibility } from '@/lib/policy-server-compatibility';
 import { policyExampleIssues } from '@/lib/policy-schema-guidance';
+import { listWorkflowPolicyChecks } from '@/lib/workflow-policy-checks';
 import { convertLegacyPolicy, createStructuredPolicy, editablePolicy, policyEditorBuffers, policyEditorSignature, policySchemaOutline, preparePolicyDraft, readPolicySchemaBuffer, type PolicyEditorBuffers } from './policy-editor-model';
 import { PolicySchemaBuilder } from './policy-schema-builder';
 import { scaffoldPolicyExample } from './policy-example-scaffold';
@@ -17,7 +18,7 @@ import './policies.css';
 
 const newId = (prefix: string) => `${prefix}-${randomUuid()}`;
 
-export function PoliciesPage({ state, act, notify, loading, busy, onOpenWorkflowPolicy, initialPolicyId, initialPolicyVersion, requestId, onSelectionChange }: PageProps & { loading: boolean; busy: boolean; onOpenWorkflowPolicy?:(workflowId:string)=>void; initialPolicyId?:string; initialPolicyVersion?:number; requestId?:string; onSelectionChange?:(policyId:string,version:number)=>void }) {
+export function PoliciesPage({ state, act, notify, loading, busy, onOpenWorkflowPolicy, initialPolicyId, initialPolicyVersion, requestId, onSelectionChange }: PageProps & { loading: boolean; busy: boolean; onOpenWorkflowPolicy?:(workflowId:string,nodeId?:string)=>void; initialPolicyId?:string; initialPolicyVersion?:number; requestId?:string; onSelectionChange?:(policyId:string,version:number)=>void }) {
   const revisions = state.policies ?? [];
   const latest = [...new Map([...revisions].sort((a, b) => a.version - b.version).map(policy => [policy.id, policy])).values()].sort((a, b) => a.name.localeCompare(b.name, 'ko'));
   const [query, setQuery] = useState('');
@@ -48,8 +49,8 @@ export function PoliciesPage({ state, act, notify, loading, busy, onOpenWorkflow
   const selectedLatest = latest.find(policy => policy.id === draft?.id);
   const archived = Boolean(draft && state.lifecycle?.policies?.[draft.id]?.archived);
   const capacity = state.policyCapacity;
-  const boundWorkflows = draft ? state.workflows.filter(workflow => workflow.policyRouting?.policy.id === draft.id) : [];
-  const boundDeployments = draft ? state.deployments.filter(deployment => deployment.workflow.policyRouting?.policy.id === draft.id) : [];
+  const boundWorkflows = draft ? state.workflows.map(workflow=>({workflow,checks:listWorkflowPolicyChecks(workflow).filter(check=>check.routing.policy.id===draft.id)})).filter(item=>item.checks.length) : [];
+  const boundDeployments = draft ? state.deployments.map(deployment=>({deployment,checks:listWorkflowPolicyChecks(deployment.workflow).filter(check=>check.routing.policy.id===draft.id)})).filter(item=>item.checks.length) : [];
   const historical = historicalView && !forking;
   const available = state.policies !== undefined;
   const writable = state.role === 'admin' || state.role === 'editor';
@@ -181,7 +182,7 @@ export function PoliciesPage({ state, act, notify, loading, busy, onOpenWorkflow
         <nav aria-label="정책 편집 섹션">{[{id:'settings',label:'기본 설정'},{id:'prompt',label:'지시문'},{id:'schema',label:'출력 스키마'},{id:'examples',label:`예제 ${draft.examples.length}개`}].map(section => <button type="button" key={section.id} onClick={() => jumpSection(section.id)}>{section.label}</button>)}</nav>
       </div>
       <p className="policy-muted">{viewingRevision ? `${timeLabel(viewingRevision.updatedAt)} 저장 / ${viewingRevision.connectionSnapshot.name} / ${viewingRevision.connectionSnapshot.model}` : '새 정책을 저장한 뒤 워크플로우 설정에서 연결할 수 있습니다.'}</p>
-      <details className="policy-dependencies"><summary>연결된 워크플로우 {boundWorkflows.length}개 / 조회한 배포 {boundDeployments.length}개</summary>{boundWorkflows.length ? <ul>{boundWorkflows.map(workflow => <li key={workflow.id}>{onOpenWorkflowPolicy?<button type="button" className="btn small" onClick={()=>onOpenWorkflowPolicy(workflow.id)}>{workflow.name}<ArrowRight size={12}/></button>:<span>{workflow.name}</span>}<code>정책 v{workflow.policyRouting!.policy.version}</code></li>)}</ul> : <p>현재 연결된 워크플로우가 없습니다.</p>}{boundDeployments.length > 0 && <p>조회한 배포의 정책 버전: {[...new Set(boundDeployments.map(deployment => deployment.workflow.policyRouting!.policy.version))].sort((a,b) => a-b).map(version => `v${version}`).join(', ')}</p>}<p>정책을 수정해도 기존 워크플로우와 배포의 버전은 자동으로 바뀌지 않습니다.</p></details>
+      <details className="policy-dependencies"><summary>연결된 워크플로우 {boundWorkflows.length}개 / 정책 검사 {boundWorkflows.reduce((sum,item)=>sum+item.checks.length,0)}개 / 조회한 배포 {boundDeployments.length}개</summary>{boundWorkflows.length ? <ul>{boundWorkflows.flatMap(({workflow,checks})=>checks.map(check=><li key={`${workflow.id}:${check.id}`}>{onOpenWorkflowPolicy?<button type="button" className="btn small" onClick={()=>onOpenWorkflowPolicy(workflow.id,check.id)}>{workflow.name} / {check.id==='policy'?'기존 정책 분기':`${check.stage==='pre'?'요청 검사':'응답 검사'} ${check.rule?.name??''}`}<ArrowRight size={12}/></button>:<span>{workflow.name} / {check.stage==='pre'?'요청 검사':'응답 검사'} {check.rule?.name??'기존 정책 분기'}</span>}<code>정책 v{check.routing.policy.version}</code>{check.rule?.enabled===false&&<Tag>사용 중지</Tag>}</li>))}</ul> : <p>현재 연결된 워크플로우가 없습니다.</p>}{boundDeployments.length > 0 && <p>조회한 배포의 정책 버전: {[...new Set(boundDeployments.flatMap(item=>item.checks.map(check=>check.routing.policy.version)))].sort((a,b) => a-b).map(version => `v${version}`).join(', ')}</p>}<p>정책을 수정해도 기존 워크플로우와 배포의 버전은 자동으로 바뀌지 않습니다.</p></details>
       {!structured && <div className="policy-info policy-legacy-notice"><GitBranch size={16}/><span>기존 정책의 판정 코드와 실행 방식은 유지됩니다. 복합 출력을 사용하려면 새 형식의 초안을 직접 만드세요.</span>{writable && <button className="btn small" disabled={locked || archived} onClick={() => { const converted = convertLegacyPolicy(draft, policyOutputSchema(draft)); setDraft(converted); setBuffers(policyEditorBuffers(converted)); setForking(true); setHistoricalView(false); setBaseVersion(selectedLatest?.version ?? viewVersion); setTest(undefined); setError(''); setShowErrors(false); }}>자유 스키마로 새 초안</button>}</div>}
       {structured && <p className="policy-format-help"><Braces size={15}/><span>필드 이름과 구조를 자유롭게 정의합니다. decision 필드는 필수가 아닙니다. 출력 값을 읽는 분기 조건, 검사와 실행 동작은 워크플로우에서 연결하세요.</span></p>}
       {archived && <div className="policy-info"><Archive size={16}/><span>보관된 정책입니다. 기존 워크플로우와 배포는 저장된 버전으로 계속 실행됩니다. 편집하려면 먼저 복원하세요.</span></div>}

@@ -8,6 +8,8 @@ import { executionLimitIssues } from './execution-plan.ts';
 import { validateWorkflowGraph } from './workflow-graph.ts';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { policyRoutingErrors } from './policy-routing.ts';
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { workflowPolicyCheckErrors, listWorkflowPolicyChecks } from './workflow-policy-checks.ts';
 const MAX_INPUT=40_000;
 function str(value:unknown,maximum:number):value is string{return typeof value==='string'&&value.length>0&&value.length<=maximum;}
 function trimmed(value:unknown):string{return typeof value==='string'?value.trim():'';}
@@ -75,6 +77,8 @@ function validateRegex(pattern: string): string | null {
 export function validateWorkflow(workflow: Workflow, connections: Connection[]): string[] {
   if (!workflow || typeof workflow !== 'object') return ['워크플로우 설정을 확인하세요.'];
   const errors: string[] = [...executionLimitIssues(workflow)];
+  errors.push(...workflowPolicyCheckErrors(workflow));
+  for(const scope of listWorkflowPolicyChecks(workflow).filter(scope=>scope.id!=='policy'))errors.push(...validateConnection(scope.routing.policy.connectionSnapshot));
   if (workflow.policyRouting) errors.push(...policyRoutingErrors(workflow.policyRouting), ...validateConnection(workflow.policyRouting.policy.connectionSnapshot));
   if (workflow.responseRetry !== undefined) {
     const policy = workflow.responseRetry;
@@ -103,7 +107,7 @@ export function validateWorkflow(workflow: Workflow, connections: Connection[]):
         if (!rule || !str(rule.id, 100) || !str(trimmed(rule.name), 100) || !rule.config || typeof rule.config !== 'object' || Array.isArray(rule.config) || typeof rule.enabled !== 'boolean') { errors.push('검사 ID, 이름, 설정을 확인하세요.'); continue; }
         if (ids.has(rule.id)) errors.push('단계 ID와 검사 ID는 서로 달라야 합니다.');
         ids.add(rule.id);
-        if (!['keyword', 'regex', 'length', 'llm', 'pii', 'json', 'required'].includes(rule.kind)) errors.push(`${rule.name}: 지원하지 않는 검사 유형입니다.`);
+        if (!['keyword', 'regex', 'length', 'llm', 'pii', 'json', 'required', 'policy'].includes(rule.kind)) errors.push(`${rule.name}: 지원하지 않는 검사 유형입니다.`);
         if (!rule.enabled) continue;
         if (['keyword','required'].includes(rule.kind) && (!str(rule.config.pattern, 2000) || !rule.config.pattern.split(/[,\n]/).some(word => word.trim()))) errors.push(`${rule.name}: 검사할 문구를 입력하세요.`);
         if (rule.kind === 'regex') { const error = validateRegex(rule.config.pattern ?? ''); if (error) errors.push(`${rule.name}: ${error}`); }

@@ -8,6 +8,9 @@ import { effectiveExecutionLimits } from './execution-plan.ts';
 // @ts-expect-error Node's source test runner uses explicit TypeScript imports.
 import { policyExecutionConfiguration } from './policy-routing.ts';
 
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { expectedPolicyCheckResult } from './workflow-policy-checks.ts';
+
 const compareKeys=(a:string,b:string)=>a<b?-1:a>b?1:0;
 function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
@@ -24,7 +27,7 @@ export function referencedConnections(workflow: Workflow, connections: Connectio
 export function executionConfiguration(workflow: Workflow) {
   const {updatedAt: _updatedAt,layout: _layout,cloneSource: _cloneSource,releasePolicy: _releasePolicy,name: _name,description: _description,alias: _alias,...configuration}=workflow;
   const groups=(stage:Workflow['pre'])=>stage.map(({name:_groupName,...group})=>({
-    ...group,rules:group.rules.map(({name:_ruleName,description:_ruleDescription,...rule})=>rule),
+    ...group,rules:group.rules.map(({name:_ruleName,description:_ruleDescription,...rule})=>({...rule,...(rule.kind==='policy'&&rule.config.policyRouting?{config:{...rule.config,policyRouting:policyExecutionConfiguration(rule.config.policyRouting)}}:{})})),
   }));
   const stageGraph=(stage:NonNullable<Workflow['graph']>['pre'])=>({...stage,nodes:stage.nodes.map(({name:_controlName,...node})=>node)});
   return {...configuration,inputScope:workflow.inputScope??'conversation',executionLimits:effectiveExecutionLimits(workflow),pre:groups(workflow.pre),post:groups(workflow.post),
@@ -39,14 +42,17 @@ export function datasetFingerprint(dataset: Dataset): Promise<string> {
   const {updatedAt: _updatedAt,...content}=dataset;
   return digest(content);
 }
-export function matchesExpectation(row: Pick<DatasetRow,'expected'|'expectedStage'|'expectedRuleId'|'expectedDecision'|'expectedRoute'|'expectedPolicyCode'|'expectedPolicyFields'>, result: ExecutionResult): boolean {
+export function matchesExpectation(row: Pick<DatasetRow,'expected'|'expectedStage'|'expectedRuleId'|'expectedDecision'|'expectedRoute'|'expectedPolicyCode'|'expectedPolicyFields'|'expectedPolicyNodeId'>, result: ExecutionResult, workflow?:Workflow): boolean {
   if(result.status!==row.expected)return false;
   if(row.expectedStage&&result.stage!==row.expectedStage)return false;
-  if(row.expectedDecision&&result.policyDecision!==row.expectedDecision)return false;
-  if(row.expectedRoute&&result.policyRoute!==row.expectedRoute)return false;
-  if(row.expectedPolicyCode&&result.policyCode!==row.expectedPolicyCode)return false;
-  if(row.expectedPolicyFields && (result.policyFieldChecks?.length!==row.expectedPolicyFields.length || row.expectedPolicyFields.some((field,index)=>result.policyFieldChecks?.[index].path!==field.path||result.policyFieldChecks?.[index].matched!==true)))return false;
-  if(result.policyFieldChecks?.some(check=>!check.matched))return false;
+  const policyExpected=Boolean(row.expectedPolicyNodeId||row.expectedDecision||row.expectedRoute||row.expectedPolicyCode||row.expectedPolicyFields);
+  const actual=policyExpected?expectedPolicyCheckResult(workflow,row,result):undefined;
+  if(policyExpected&&!actual)return false;
+  if(row.expectedDecision&&actual?.decision!==row.expectedDecision)return false;
+  if(row.expectedRoute&&actual?.route!==row.expectedRoute)return false;
+  if(row.expectedPolicyCode&&actual?.policyCode!==row.expectedPolicyCode)return false;
+  if(row.expectedPolicyFields && (actual?.fieldChecks?.length!==row.expectedPolicyFields.length || row.expectedPolicyFields.some((field,index)=>actual?.fieldChecks?.[index].path!==field.path||actual?.fieldChecks?.[index].matched!==true)))return false;
+  if(actual?.fieldChecks?.some(check=>!check.matched))return false;
   const finalAttempt=result.attempts?.at(-1)?.number??Math.max(0,...result.traces.map(t=>t.attempt??0));
   if(row.expectedRuleId&&!result.traces.some(t=>t.traceType!=='policy'&&t.ruleId===row.expectedRuleId&&t.status===row.expected&&(t.stage==='pre'||!finalAttempt||t.attempt===finalAttempt)))return false;
   return true;

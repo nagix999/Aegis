@@ -448,6 +448,7 @@ function repairCriterion(rule: Rule): Record<string, unknown> {
     case 'pii': return { ...common, requirement: '선택한 형식의 개인정보를 응답에 포함하지 마세요. 구체적인 연락처나 식별자 대신 일반적인 안내를 제공하세요.', forbiddenFormats: rule.config.piiTypes };
     case 'json': return { ...common, requirement: '코드 블록이나 설명 없이 유효한 JSON만 반환하세요.', topLevel: (rule.config.requiredKeys?.length || rule.config.jsonMode !== 'any') ? 'object' : 'any JSON value', requiredKeys: rule.config.requiredKeys ?? [] };
     case 'required': return { ...common, requirement: rule.config.matchMode === 'all' ? '다음 필수 문구를 모두 응답에 포함하세요.' : '다음 필수 문구 중 하나 이상을 응답에 포함하세요.', requiredPhrases: words() };
+    case 'policy': throw new Error('정책 검사는 Python 서버에서 실행하세요.');
     case 'llm': return { ...common, requirement: '아래 관리자가 설정한 응답 검사 기준을 만족하는 답변을 작성하세요. 분류 판정 자체를 답변으로 반환하지 마세요.', policy: rule.config.prompt };
   }
 }
@@ -487,7 +488,7 @@ export async function executeWorkflow(workflow: Workflow, connections: Connectio
     return result;
   };
   if (options.mockResponse !== undefined) result.executionMode = 'mock';
-  if (workflow.policyRouting) { result.status = 'error'; result.stage = 'pre'; result.reason = '정책 분기는 Python 서버에서만 실행할 수 있습니다. Python용 UI와 서버를 사용하세요.'; return finish(); }
+  if (workflow.policyRouting || [...workflow.pre,...workflow.post].some(group=>group.rules.some(rule=>rule.kind==='policy'))) { result.status = 'error'; result.stage = 'pre'; result.reason = '정책 분기는 Python 서버에서만 실행할 수 있습니다. Python용 UI와 서버를 사용하세요.'; return finish(); }
   const errors = validateWorkflow(workflow, connections);
   if (errors.length) { result.status = 'error'; result.stage = 'pre'; result.reason = errors[0]; return finish(); }
   const plan=createExecutionPlan(workflow);

@@ -8,7 +8,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
-ENGINE_VERSION = "7-python"
+ENGINE_VERSION = "8-python"
 
 
 def _number(value: int | float) -> str:
@@ -79,19 +79,23 @@ def execution_configuration(workflow: dict) -> dict:
     configuration = {key: copy.deepcopy(value) for key, value in workflow.items() if key not in excluded}
     configuration["inputScope"] = workflow.get("inputScope", "conversation")
     configuration["executionLimits"] = copy.deepcopy(workflow.get("executionLimits", {"timeoutMs": 120000, "maxModelCalls": 64}))
-    if "policyRouting" in configuration:
-        routing = configuration["policyRouting"]
+    def normalize_routing(routing):
         policy = routing["policy"]
         routing["policy"] = {key: value for key, value in policy.items() if key not in {"id", "name", "description", "version", "updatedAt"}}
         routing["policy"]["connectionSnapshot"] = {key: value for key, value in policy["connectionSnapshot"].items() if key != "name"}
         routing["routes"] = [{key: value for key, value in route.items() if key in ({"decision", "action", "responseText"} if route["action"] == "respond" else {"decision", "action", "errorCode", "errorMessage"} if route["action"] == "error" else {"decision", "action"})} for route in routing["routes"]]
         if "graph" in routing:
             routing["graph"]["nodes"] = [{key: value for key, value in node.items() if key != "name"} for node in routing["graph"]["nodes"]]
+    if "policyRouting" in configuration:
+        normalize_routing(configuration["policyRouting"])
     for stage in ("pre", "post"):
         configuration[stage] = []
         for original in workflow.get(stage, []):
             group = {key: copy.deepcopy(value) for key, value in original.items() if key != "name"}
             group["rules"] = [{key: copy.deepcopy(value) for key, value in rule.items() if key not in {"name", "description"}} for rule in original.get("rules", [])]
+            for rule in group["rules"]:
+                if rule.get("kind") == "policy" and rule.get("config", {}).get("policyRouting"):
+                    normalize_routing(rule["config"]["policyRouting"])
             configuration[stage].append(group)
     if "graph" in configuration:
         for stage in ("pre", "post"):
@@ -107,19 +111,35 @@ def dataset_fingerprint(dataset: dict) -> str:
     return digest({key: value for key, value in dataset.items() if key != "updatedAt"})
 
 
-def matches_expectation(row: dict, result: dict) -> bool:
+def matches_expectation(row: dict, result: dict, workflow: dict | None = None) -> bool:
     if result.get("status") != row.get("expected"):
         return False
     if row.get("expectedStage") and result.get("stage") != row["expectedStage"]:
         return False
+    actual_policy = result
+    policy_expected = any(row.get(key) for key in ("expectedPolicyNodeId", "expectedDecision", "expectedRoute", "expectedPolicyCode", "expectedPolicyFields"))
+    if policy_expected:
+        from .policy_checks import select_policy_binding
+        binding = select_policy_binding(workflow, row.get("expectedPolicyNodeId")) if workflow is not None else None
+        identifier = binding["id"] if binding else row.get("expectedPolicyNodeId")
+        if workflow is not None and binding is None:
+            return False
+        if identifier and identifier != "policy":
+            attempts = result.get("attempts", [])
+            final_attempt = attempts[-1]["number"] if attempts else None
+            candidates = [item for item in result.get("policyChecks", []) if item.get("ruleId") == identifier and item.get("status") in {"allow", "block"} and (item.get("stage") != "post" or final_attempt is None or item.get("attempt") == final_attempt)]
+            if not candidates:
+                return False
+            selected = candidates[-1]
+            actual_policy = {"policyDecision": selected.get("decision"), "policyRoute": selected.get("route"), "policyCode": selected.get("policyCode"), "policyFieldChecks": selected.get("fieldChecks", [])}
     for expected_key, actual_key in (("expectedDecision", "policyDecision"), ("expectedRoute", "policyRoute"), ("expectedPolicyCode", "policyCode")):
-        if row.get(expected_key) and result.get(actual_key) != row[expected_key]:
+        if row.get(expected_key) and actual_policy.get(actual_key) != row[expected_key]:
             return False
     if row.get("expectedPolicyFields"):
-        checks = result.get("policyFieldChecks", [])
+        checks = actual_policy.get("policyFieldChecks", [])
         if len(checks) != len(row["expectedPolicyFields"]) or any(check.get("path") != field["path"] or check.get("matched") is not True for field, check in zip(row["expectedPolicyFields"], checks)):
             return False
-    if any(check.get("matched") is not True for check in result.get("policyFieldChecks", [])):
+    if any(check.get("matched") is not True for check in actual_policy.get("policyFieldChecks", [])):
         return False
     attempts, traces = result.get("attempts", []), result.get("traces", [])
     final_attempt = attempts[-1]["number"] if attempts else max([0] + [trace.get("attempt", 0) for trace in traces])
@@ -155,7 +175,7 @@ async def verify_deployment_evidence(store: Any, workflow: dict, fingerprint: st
         results = run.get("results", [])
         indexed = {result.get("rowId"): result for result in results}
         rows = dataset["rows"]
-        require(run.get("datasetSnapshot") and len(results) == len(rows) == len(indexed) and all(row["id"] in indexed and matches_expectation(row, indexed[row["id"]]) for row in rows), "전체 데이터셋의 예상 결과를 모두 충족한 검증만 배포 근거로 사용할 수 있습니다. 일부 항목만 재시도한 기록은 전체 검증을 다시 실행하세요.")
+        require(run.get("datasetSnapshot") and len(results) == len(rows) == len(indexed) and all(row["id"] in indexed and matches_expectation(row, indexed[row["id"]], workflow) for row in rows), "전체 데이터셋의 예상 결과를 모두 충족한 검증만 배포 근거로 사용할 수 있습니다. 일부 항목만 재시도한 기록은 전체 검증을 다시 실행하세요.")
         checks.extend([{"namespace": "run", "id": run["id"], "revision": captured["revision"]}, {"namespace": "dataset", "id": dataset["id"], "revision": dataset_record["revision"]}])
         summaries.append({"runId": run["id"], "datasetId": dataset["id"], "datasetName": dataset["name"], "datasetFingerprint": run["datasetFingerprint"], "fingerprint": fingerprint, "total": len(rows), "matchedCount": len(rows), "completedAt": run.get("updatedAt", run["createdAt"]), "engineVersion": ENGINE_VERSION})
         covered.add(dataset["id"])

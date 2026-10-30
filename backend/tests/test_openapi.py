@@ -17,7 +17,10 @@ def test_openapi_has_unique_actions_valid_model_refs_bodies_and_auth():
                     assert operation['requestBody']['required']
         assert len(ids)==len(set(ids))
         assert 'Workflow' in schema['components']['schemas']
-        assert schema['info']['version']=='3.7.0'
+        assert 'policyRouting' in schema['components']['schemas']['RuleConfig']['properties']
+        assert 'policy' in schema['components']['schemas']['Rule']['properties']['kind']['enum']
+        assert 'expectedPolicyNodeId' in schema['components']['schemas']['DatasetRow']['properties']
+        assert schema['info']['version']=='3.8.0'
         switch = schema['components']['schemas']['PolicySwitchNode']
         assert switch['properties']['kind']['const'] == 'switch'
         assert {'id', 'name', 'kind', 'path', 'cases'} <= set(switch['required'])

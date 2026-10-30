@@ -154,13 +154,23 @@ def test_existing_v1_area_members_are_never_automatically_rewritten():
 
 
 @pytest.mark.parametrize('model,base,field,limit', [
-    (WorkflowLayout, {'version': 1, 'positions': {}}, 'positions', 988),
-    (WorkflowLayout, {'version': 1, 'positions': {}}, 'pinnedKeys', 124),
-    (CanvasZone, zone([]), 'nodeKeys', 988),
+    (WorkflowLayout, {'version': 1, 'positions': {}}, 'positions', 1280),
+    (WorkflowLayout, {'version': 1, 'positions': {}}, 'pinnedKeys', 1280),
+    (CanvasZone, zone([]), 'nodeKeys', 1280),
 ])
-def test_layout_capacity_includes_classifier_and_twenty_four_policy_nodes(model, base, field, limit):
+def test_layout_capacity_includes_twelve_independent_policy_graphs(model, base, field, limit):
+    # Up to twelve classifiers each add twenty-four local graph nodes. The
+    # visual capacity grows while PRE/POST group and DAG execution limits stay.
     def values(count):
         return {f'node-{index}': {'x': 0, 'y': 0} for index in range(count)} if field == 'positions' else [f'node-{index}' for index in range(count)]
     assert model.model_validate({**base, field: values(limit)})
     with pytest.raises(ValidationError):
         model.model_validate({**base, field: values(limit + 1)})
+
+
+def test_scoped_policy_layout_key_length_is_bounded():
+    key = 'policy-node:' + 'owner-' + 'a' * 94 + '/' + 'n' * 80
+    assert len(key) > 150
+    assert WorkflowLayout.model_validate({'version': 1, 'positions': {key: {'x': 0, 'y': 0}}, 'pinnedKeys': [key]})
+    with pytest.raises(ValidationError):
+        WorkflowLayout.model_validate({'version': 1, 'positions': {'n' * 261: {'x': 0, 'y': 0}}})
