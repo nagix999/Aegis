@@ -5,6 +5,10 @@ export function cloneWorkflowContent(original: Workflow, identifier: (prefix: st
   const clone = structuredClone(original);
   const ruleIds = new Map<string, string>();
   const keys = new Map([['input', 'input'], ['main', 'main'], ['output', 'output'], ['start', 'start'], ['end', 'end']]);
+  if (clone.policyRouting) {
+    keys.set('policy','policy');
+    for (const node of clone.policyRouting.graph?.nodes ?? []) keys.set(`policy-node:${node.id}`,`policy-node:${node.id}`);
+  }
   for (const stage of ['pre', 'post'] as const) {
     clone[stage] = clone[stage].map(group => {
       const groupId = identifier('group');

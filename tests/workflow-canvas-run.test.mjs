@@ -173,6 +173,30 @@ test('policy models and graph nodes render on the main canvas with their own set
   const readonly=render.canvas({...f.props,readOnly:true,onPolicyConnect:noop,onSelectPolicyEdge:noop});
   assert.equal(nodes(readonly).policy['data-kind'],'policy');assert.doesNotMatch(readonly,/data-policy-connect-port=/);assert.doesNotMatch(readonly,/data-connect-port=/);
 });
+test('Switch cards keep a compact output selector with exact scalar case labels and a default route',()=>{
+  const f=withPolicy(fixture()),graph=f.workflow.policyRouting.graph;
+  graph.nodes[0]={id:'branch',name:'위험 경로',kind:'switch',path:'/risk/level',cases:[{id:'value-string',value:' LOW '},{id:'value-number',value:1},{id:'value-boolean',value:false},{id:'value-null',value:null}]};
+  graph.edges=[{id:'string-out',from:'branch',to:'main-action',port:'value-string'},{id:'number-out',from:'branch',to:'reply-action',port:'value-number'},{id:'boolean-out',from:'branch',to:'error-action',port:'value-boolean'},{id:'null-out',from:'branch',to:'reply-action',port:'value-null'},{id:'default-out',from:'branch',to:'error-action',port:'default'}];
+  const before=structuredClone(f.workflow),html=render.canvas({...f.props,onPolicyConnect:noop}),cards=nodes(html);
+  assert.equal(cards['policy-node:branch']['data-kind'],'policy-switch');assert.match(cards['policy-node:branch']['aria-label'],/Switch 분기 설정.*\/risk\/level/);
+  assert.equal([...html.matchAll(/data-policy-connect-port="branch:/g)].length,1);assert.match(html,/aria-label="위험 경로 출력 경로 선택"/);
+  for(const port of ['value-string','value-number','value-boolean','value-null','default'])assert.ok(html.includes(`<option value="${port}"`));
+  assert.match(html,/&quot; LOW &quot;/);assert.match(html,/>false<\/option>/);assert.match(html,/>null<\/option>/);assert.match(html,/default/);
+  for(const id of ['string-out','number-out','boolean-out','null-out','default-out'])assert.ok(html.includes(`data-policy-edge-id="${id}"`));
+  const routeBlocks=value=>[...value.matchAll(/<g\b[^>]*data-policy-edge-id="([^"]+)"[^>]*>([\s\S]*?)<\/g>/g)].map(match=>({id:match[1],body:match[2]}));
+  const visibleLabels=value=>routeBlocks(value).flatMap(block=>[...block.body.matchAll(/<text\b[^>]*class="wc-branch-label[^>]*>([\s\S]*?)<\/text>/g)].map(match=>({id:block.id,label:match[1]})));
+  assert.deepEqual(visibleLabels(html),[{id:'string-out',label:'&quot; LOW &quot;'}],'Only the route selected in the compact selector has a visible edge label.');
+  for(const [id,label]of [['string-out','&quot; LOW &quot;'],['number-out','1'],['boolean-out','false'],['null-out','null'],['default-out','기본 경로']]){
+    const block=routeBlocks(html).find(block=>block.id===id);assert.ok(block,id);
+    assert.ok(block.body.match(/<title>([\s\S]*?)<\/title>/)?.[1].includes(` ${label} 경로`),`${id} retains its exact title: ${block.body.match(/<title>([\s\S]*?)<\/title>/)?.[1]}`);
+    assert.ok(block.body.match(/aria-label="([^"]*)"/)?.[1].includes(` ${label} 경로`),`${id} retains its exact accessible label`);
+  }
+  assert.deepEqual(f.workflow,before);
+  const readonly=render.canvas({...f.props,readOnly:true,onPolicyConnect:noop});assert.doesNotMatch(readonly,/wc-switch-port-choice|data-policy-connect-port=/);assert.equal(nodes(readonly)['policy-node:branch']['data-kind'],'policy-switch');
+  assert.deepEqual(visibleLabels(readonly),[],'Without an output selector no arbitrary Switch route is visually preferred.');
+  for(const route of routeBlocks(readonly)){assert.match(route.body,/<title>[^<]+ 경로<\/title>/);assert.match(route.body,/aria-label="[^"]+ 경로 연결 설정"/);}
+  const ordinary=render.canvas({...withPolicy(fixture()).props,onPolicyConnect:noop});assert.match(ordinary,/<text class="wc-branch-label true"[^>]*>참<\/text>/);assert.match(ordinary,/<text class="wc-branch-label false"[^>]*>거짓<\/text>/);
+});
 test('legacy branch and rule cards share condition labels and accept incoming connections without changing saved kinds',()=>{
   const f=withPolicy(fixture()),original=structuredClone(f.workflow),html=render.canvas({...f.props,onPolicyConnect:noop}),cards=nodes(html);
   for(const [id,name]of [['branch','문의 종류'],['risk','위험 검사']]){

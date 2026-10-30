@@ -8,7 +8,7 @@ import math
 from decimal import Decimal
 from typing import Any
 
-ENGINE_VERSION = "6-python"
+ENGINE_VERSION = "7-python"
 
 
 def _number(value: int | float) -> str:

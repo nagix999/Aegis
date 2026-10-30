@@ -35,7 +35,19 @@ const valueType = (value:unknown):string => value===null?'null':Array.isArray(va
 const compatible = (value:unknown,types:string[]) => !(typeof value==='number'&&(!Number.isFinite(value)||Math.abs(value)>Number.MAX_SAFE_INTEGER))&&(types.includes(valueType(value)) || typeof value==='number'&&types.includes('integer')&&Number.isInteger(value));
 export function policyGraphSchemaIssues(graph:PolicyGraph,schema:Schema):PolicyConditionIssue[] {
   const issues:PolicyConditionIssue[]=[];
-  for(const node of graph.nodes)if(object(node)&&node.kind!=='action'&&object(node.condition)&&Array.isArray(node.condition.predicates))node.condition.predicates.forEach((predicate,predicateIndex)=>{
+  for(const node of graph.nodes){
+    if(!object(node))continue;
+    if(node.kind==='switch'){
+      if(typeof node.path!=='string')continue;
+      const field=policySchemaField(schema,node.path),add=(predicateIndex:number,code:PolicyConditionIssue['code'],message:string)=>issues.push({nodeId:node.id,nodeName:node.name,predicateIndex,path:node.path,code,message});
+      if(field.status==='missing'){add(0,'path','출력 스키마에 없는 필드입니다. 경로를 다시 선택하세요.');continue;}
+      if(field.status!=='known'||!Array.isArray(node.cases))continue;
+      node.cases.forEach((item,caseIndex)=>{
+        if(object(item)&&own(item,'value')&&!compatible(item.value,field.types))add(caseIndex,'value','Switch 비교값의 자료형을 출력 필드에 맞춰 주세요.');
+      });
+      continue;
+    }
+    if(node.kind!=='action'&&object(node.condition)&&Array.isArray(node.condition.predicates))node.condition.predicates.forEach((predicate,predicateIndex)=>{
     if(!object(predicate)||typeof predicate.path!=='string')return;
     const field=policySchemaField(schema,predicate.path),add=(code:PolicyConditionIssue['code'],message:string)=>issues.push({nodeId:node.id,nodeName:node.name,predicateIndex,path:predicate.path,code,message});
     if(field.status==='missing'){add('path','출력 스키마에 없는 필드입니다. 경로를 다시 선택하세요.');return;}
@@ -56,6 +68,7 @@ export function policyGraphSchemaIssues(graph:PolicyGraph,schema:Schema):PolicyC
       else add('operator','포함 조건은 문자열 또는 배열 필드에서 사용하세요.');
     } else if(!numeric&&!compatible(predicate.value,field.types))add('value','비교값의 자료형을 출력 필드에 맞춰 주세요.');
   });
+  }
   return issues;
 }
 

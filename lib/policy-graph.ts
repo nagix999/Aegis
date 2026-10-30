@@ -1,4 +1,4 @@
-import type { PolicyCondition, PolicyGraph, PolicyGraphNode, PolicyPredicate } from './aegis-types';
+import type { PolicyCondition, PolicyGraph, PolicyGraphNode, PolicySwitchValue } from './aegis-types';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { policyGraphSchemaIssues } from './policy-schema-guidance.ts';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
@@ -8,6 +8,38 @@ const object = (value: unknown): value is Record<string, unknown> => !!value && 
 const own = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
 const id = (value: unknown): value is string => typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(value);
 export function validPolicyPointer(path: unknown): path is string { return typeof path === 'string' && path.length <= 512 && (path === '' || path.startsWith('/')) && path.split('/').length <= 13 && !/~(?:[^01]|$)/.test(path); }
+export function validPolicySwitchValue(value: unknown): value is PolicySwitchValue {
+  const scalar=value === null || typeof value === 'boolean' || typeof value === 'string'
+    || typeof value === 'number' && Number.isFinite(value) && Math.abs(value)<=Number.MAX_SAFE_INTEGER;
+  return scalar && new TextEncoder().encode(JSON.stringify(value)).length<=4096;
+}
+/** JSON notation makes whitespace and scalar types visible without changing the value. */
+export function policySwitchValueLabel(value: PolicySwitchValue): string { return JSON.stringify(value) ?? '미완성 값'; }
+export function policyNodePorts(node: PolicyGraphNode): {port:string;label:string}[] {
+  if (node.kind === 'action') return [];
+  if (node.kind === 'switch') return [
+    ...(Array.isArray(node.cases) ? node.cases.filter(item => object(item) && typeof item.id === 'string').map(item => ({port:item.id,label:policySwitchValueLabel(item.value)})) : []),
+    {port:'default',label:'기본 경로'},
+  ];
+  return [{port:'true',label:'참'},{port:'false',label:'거짓'}];
+}
+export function policySwitchErrors(node: Extract<PolicyGraphNode,{kind:'switch'}>): string[] {
+  const errors:string[]=[];
+  if (!validPolicyPointer(node.path)) errors.push('Switch 비교 필드는 올바른 JSON Pointer로 입력하세요.');
+  if (!Array.isArray(node.cases) || node.cases.length < 1 || node.cases.length > 12) return [...errors,'Switch 비교값은 1~12개로 구성하세요.'];
+  const identifiers=new Set<string>(),values=new Set<string>();
+  for (const item of node.cases) {
+    if (!object(item) || !id(item.id) || item.id === 'default' || identifiers.has(item.id)) errors.push('Switch 비교값의 ID는 중복 없이 지정하고 default는 사용하지 마세요.');
+    else identifiers.add(item.id);
+    if (!object(item) || !own(item,'value') || !validPolicySwitchValue(item.value)) errors.push('Switch 비교값은 문자열, 안전한 유한 숫자, 불리언 또는 null로 입력하세요. JSON 크기는 4,096바이트 이내입니다.');
+    else {
+      const key=JSON.stringify(item.value);
+      if (values.has(key)) errors.push('Switch 비교값은 같은 자료형과 값으로 중복할 수 없습니다.');
+      values.add(key);
+    }
+  }
+  return [...new Set(errors)];
+}
 export function policyConditionErrors(condition: PolicyCondition): string[] {
   if (!object(condition) || !['all','any'].includes(condition.mode) || !Array.isArray(condition.predicates) || condition.predicates.length < 1 || condition.predicates.length > 12) return ['조건은 all 또는 any와 1~12개 필드 검사로 구성하세요.'];
   const errors: string[] = [];
@@ -25,25 +57,27 @@ export function policyGraphErrors(graph: PolicyGraph, schema?:Record<string,unkn
   if (!object(graph) || graph.version !== 1 || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length < 2 || graph.nodes.length > 24 || graph.edges.length > 48) return ['정책 그래프는 버전 1, 노드 2~24개와 연결선 최대 48개로 구성하세요.'];
   const errors: string[] = [], nodes = new Map<string, PolicyGraphNode>();
   for (const node of graph.nodes) {
-    if (!object(node) || !id(node.id) || typeof node.name !== 'string' || !node.name.trim() || node.name.length > 100 || !['branch','rule','action'].includes(node.kind)) { errors.push('정책 노드의 ID, 이름과 종류를 확인하세요.'); continue; }
+    if (!object(node) || !id(node.id) || typeof node.name !== 'string' || !node.name.trim() || node.name.length > 100 || !['branch','rule','switch','action'].includes(node.kind)) { errors.push('정책 노드의 ID, 이름과 종류를 확인하세요.'); continue; }
     if (nodes.has(node.id)) errors.push('정책 노드 ID는 중복할 수 없습니다.');
     nodes.set(node.id,node);
-    if (node.kind !== 'action') errors.push(...policyConditionErrors(node.condition));
+    if (node.kind === 'switch') errors.push(...policySwitchErrors(node));
+    else if (node.kind !== 'action') errors.push(...policyConditionErrors(node.condition));
     else {
       if (!['main','respond','error'].includes(node.action)) errors.push('액션을 선택하세요.');
       if (node.action === 'respond' && (typeof node.responseText !== 'string' || !node.responseText.trim() || node.responseText.length > 4000)) errors.push('등록 안내 응답은 1~4,000자로 입력하세요.');
       if (node.action === 'error' && (typeof node.errorCode !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(node.errorCode) || typeof node.errorMessage !== 'string' || !node.errorMessage.trim() || node.errorMessage.length > 500)) errors.push('공개 오류 코드와 1~500자 메시지를 입력하세요.');
     }
   }
-  if (!id(graph.entryNodeId) || !['branch','rule'].includes(nodes.get(graph.entryNodeId)?.kind ?? '')) errors.push('정책 그래프의 시작은 조건 분기 노드여야 합니다.');
+  if (!id(graph.entryNodeId) || !['branch','rule','switch'].includes(nodes.get(graph.entryNodeId)?.kind ?? '')) errors.push('정책 그래프의 시작은 조건 분기 또는 Switch 분기 노드여야 합니다.');
   const edgeIds = new Set<string>(), outgoing = new Map([...nodes.keys()].map(key => [key,[] as PolicyGraph['edges']]));
   for (const edge of graph.edges) {
-    if (!object(edge) || !id(edge.id) || edgeIds.has(edge.id) || !nodes.has(edge.from) || !nodes.has(edge.to) || !['true','false'].includes(edge.port)) { errors.push('정책 연결선의 ID, 노드와 참/거짓 포트를 확인하세요.'); continue; }
+    if (!object(edge) || !id(edge.id) || edgeIds.has(edge.id) || !nodes.has(edge.from) || !nodes.has(edge.to) || !policyNodePorts(nodes.get(edge.from)!).some(item=>item.port===edge.port)) { errors.push('정책 연결선의 ID, 노드와 출력 포트를 확인하세요.'); continue; }
     edgeIds.add(edge.id); outgoing.get(edge.from)!.push(edge);
   }
   for (const node of nodes.values()) {
     const edges = outgoing.get(node.id)!;
-    if (node.kind === 'action' ? edges.length > 0 : edges.length !== 2 || edges.filter(e => e.port === 'true').length !== 1 || edges.filter(e => e.port === 'false').length !== 1) errors.push('조건 분기는 참/거짓 연결이 각각 하나, 액션은 나가는 연결이 없어야 합니다.');
+    const ports=policyNodePorts(node);
+    if (edges.length !== ports.length || ports.some(item=>edges.filter(edge=>edge.port===item.port).length!==1)) errors.push(node.kind==='switch'?'Switch 분기는 각 비교값과 기본 경로를 각각 하나씩 연결하세요.':'조건 분기는 참/거짓 연결이 각각 하나, 액션은 나가는 연결이 없어야 합니다.');
   }
   const visited = new Set<string>(), active = new Set<string>();
   function visit(key: string) {

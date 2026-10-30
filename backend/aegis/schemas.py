@@ -404,6 +404,49 @@ class PolicyConditionNode(ExactModel):
     condition: PolicyCondition
 
 
+class PolicySwitchCase(ExactModel):
+    id: Annotated[str, Field(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")]
+    value: Any = Field(json_schema_extra={"anyOf": [
+        {"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"},
+    ]})
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_null_fields(cls, value):
+        if isinstance(value, dict) and any(part is None for key, part in value.items() if key in cls.model_fields and key != "value"):
+            raise ValueError("Switch 경로 ID는 null일 수 없습니다.")
+        return value
+
+    @field_validator("id")
+    @classmethod
+    def reserved_port(cls, value):
+        if value == "default":
+            raise ValueError("default는 기본 경로에 예약된 ID입니다.")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def scalar_value(cls, value):
+        from .structured_schema import validate_json_value
+        if value is not None and type(value) not in (str, int, float, bool):
+            raise ValueError("Switch 비교값에는 문자열, 숫자, 불리언 또는 null을 지정하세요.")
+        return validate_json_value(value, max_bytes=4096)
+
+    @model_serializer(mode="wrap")
+    def keep_explicit_null(self, handler):
+        value = handler(self)
+        value["value"] = self.value
+        return value
+
+
+class PolicySwitchNode(ExactModel):
+    id: Identifier
+    name: Name100
+    kind: Literal["switch"]
+    path: text(512, 0, False)
+    cases: Annotated[list[PolicySwitchCase], Field(min_length=1, max_length=12)]
+
+
 class PolicyActionNode(ExactModel):
     id: Identifier
     name: Name100
@@ -423,13 +466,13 @@ class PolicyGraphEdge(ExactModel):
     id: Identifier
     from_: Identifier = Field(alias="from")
     to: Identifier
-    port: Literal["true", "false"]
+    port: Annotated[str, Field(strict=True, pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$")]
 
 
 class PolicyGraph(ExactModel):
     version: integer(1, 1)
     entryNodeId: Identifier
-    nodes: Annotated[list[PolicyConditionNode | PolicyActionNode], Field(min_length=2, max_length=24)]
+    nodes: Annotated[list[PolicyConditionNode | PolicySwitchNode | PolicyActionNode], Field(min_length=2, max_length=24)]
     edges: Annotated[list[PolicyGraphEdge], Field(min_length=2, max_length=48)]
 
 

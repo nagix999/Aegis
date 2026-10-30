@@ -2,9 +2,11 @@
 import type { Workflow } from './aegis-types';
 // @ts-expect-error Node's source runner resolves explicit TypeScript paths.
 import { getStageGraph } from './workflow-graph.ts';
+// @ts-expect-error Node's source runner resolves explicit TypeScript paths.
+import { policyNodePorts } from './policy-graph.ts';
 
-export type PolicyCanvasNode = { key:string; id:string; kind:'policy'|'policy-node'; stage:'pre'; policyKind?:'branch'|'rule'|'action'; index?:number };
-export type WorkflowCanvasLink = { id:string; from:string; to:string; stage?:'pre'|'post'; graphId?:string; graphFrom?:string; graphTo?:string; port?:'next'|'true'|'false'; policyEdgeId?:string; label?:string };
+export type PolicyCanvasNode = { key:string; id:string; kind:'policy'|'policy-node'; stage:'pre'; policyKind?:'branch'|'rule'|'switch'|'action'; index?:number };
+export type WorkflowCanvasLink = { id:string; from:string; to:string; stage?:'pre'|'post'; graphId?:string; graphFrom?:string; graphTo?:string; port?:string; policyEdgeId?:string; label?:string };
 
 export function getPolicyCanvasNodes(workflow:Workflow):PolicyCanvasNode[] {
   const routing=workflow.policyRouting;
@@ -13,7 +15,7 @@ export function getPolicyCanvasNodes(workflow:Workflow):PolicyCanvasNode[] {
   if(routing.policy?.formatVersion!==2)return nodes;
   const seen=new Set<string>();
   for(const [index,node] of (routing.graph?.nodes??[]).slice(0,24).entries()){
-    if(!node||typeof node.id!=='string'||!node.id||seen.has(node.id)||!['branch','rule','action'].includes(node.kind))continue;
+    if(!node||typeof node.id!=='string'||!node.id||seen.has(node.id)||!['branch','rule','switch','action'].includes(node.kind))continue;
     seen.add(node.id);nodes.push({key:`policy-node:${node.id}`,id:node.id,kind:'policy-node',policyKind:node.kind,stage:'pre',index});
   }
   return nodes;
@@ -57,7 +59,8 @@ export function getWorkflowCanvasLinks(workflow:Workflow):WorkflowCanvasLink[] {
     if(!edge||typeof edge.from!=='string'||typeof edge.to!=='string')continue;
     const from=`policy-node:${edge.from}`,to=`policy-node:${edge.to}`;
     if(!known.has(from)||!known.has(to)||from===to)continue;
-    links.push({id:`policy:edge:${edge.id}`,from,to,stage:'pre',policyEdgeId:edge.id,port:edge.port,label:edge.port==='true'?'참':'거짓'});
+    const source=routing.graph?.nodes.find(node=>node.id===edge.from);
+    links.push({id:`policy:edge:${edge.id}`,from,to,stage:'pre',policyEdgeId:edge.id,port:edge.port,label:source?policyNodePorts(source).find(item=>item.port===edge.port)?.label:undefined});
   }
   for(const node of (routing.graph?.nodes??[]).slice(0,24))if(node?.kind==='action'&&known.has(`policy-node:${node.id}`))actionLinks(`policy-node:${node.id}`,node.action,`policy:action:${node.id}`);
   return links;

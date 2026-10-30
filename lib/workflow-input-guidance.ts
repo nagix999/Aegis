@@ -1,6 +1,6 @@
 import type { PolicyRouting, Rule } from './aegis-types';
 // @ts-expect-error Node source tests resolve explicit TypeScript paths.
-import { policyConditionErrors } from './policy-graph.ts';
+import { policyConditionErrors, policyNodePorts, policySwitchErrors } from './policy-graph.ts';
 
 /** Locate existing validation failures without changing save or runtime rules. */
 export function ruleIssueField(rule: Rule, message: string): string {
@@ -14,13 +14,15 @@ export function policyNodeInputIssues(routing: PolicyRouting): PolicyNodeInputIs
   const graph=routing.graph;
   if(routing.policy.formatVersion!==2||!graph)return [];
   const issues:PolicyNodeInputIssue[]=[];
-  if(!graph.nodes.length)return [{field:'entry',message:'조건 분기와 액션을 하나씩 추가하고 참과 거짓 경로를 연결하세요.'}];
-  if(!graph.nodes.some(node=>node.id===graph.entryNodeId&&node.kind!=='action'))issues.push({field:'entry',message:'정책 출력에 연결할 첫 조건 분기를 선택하세요.'});
+  if(!graph.nodes.length)return [{field:'entry',message:'조건 분기 또는 Switch 분기와 액션을 추가하고 출력 경로를 연결하세요.'}];
+  if(!graph.nodes.some(node=>node.id===graph.entryNodeId&&node.kind!=='action'))issues.push({field:'entry',message:'정책 출력에 연결할 첫 분기를 선택하세요.'});
   for(const node of graph.nodes){
     if(!node.name.trim())issues.push({nodeId:node.id,field:'name',message:'노드 이름을 입력하세요.'});
     if(node.kind!=='action'){
-      for(const port of ['true','false'] as const)if(graph.edges.filter(edge=>edge.from===node.id&&edge.port===port).length!==1)issues.push({nodeId:node.id,field:`edge.${port}`,message:`${port==='true'?'참':'거짓'} 경로의 다음 노드를 하나 연결하세요.`});
-      node.condition.predicates.forEach((predicate,predicateIndex)=>{
+      for(const {port,label} of policyNodePorts(node))if(graph.edges.filter(edge=>edge.from===node.id&&edge.port===port).length!==1)issues.push({nodeId:node.id,field:`edge.${port}`,message:`${label} 경로의 다음 노드를 하나 연결하세요.`});
+      if(node.kind==='switch'){
+        for(const message of policySwitchErrors(node))issues.push({nodeId:node.id,field:message.includes('비교 필드')?'path':'cases',message});
+      }else node.condition.predicates.forEach((predicate,predicateIndex)=>{
         for(const message of policyConditionErrors({...node.condition,predicates:[predicate]}))issues.push({nodeId:node.id,predicateIndex,field:message.includes('필드 경로')?'path':'value',message});
       });
     }else if(node.action==='respond'&&(!node.responseText?.trim()||node.responseText.length>4000))issues.push({nodeId:node.id,field:'responseText',message:'등록 안내 응답을 1~4,000자로 입력하세요.'});

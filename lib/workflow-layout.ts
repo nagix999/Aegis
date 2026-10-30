@@ -7,7 +7,7 @@ import { getPolicyCanvasNodes, getWorkflowCanvasLinks } from './workflow-policy-
 export type CanvasPosition = { x: number; y: number };
 export type CanvasPositions = Record<string, CanvasPosition>;
 export type WorkflowSelection = { kind: 'input' | 'output' | 'main' | 'policy' } | { kind: 'group' | 'rule' | 'control' | 'zone' | 'policy-node'; id: string };
-export type CanvasNode = { key: string; id: string; kind: 'input' | 'output' | 'main' | 'group' | 'rule' | 'control' | 'policy' | 'policy-node'; stage?: 'pre' | 'post'; groupId?: string; index?: number; controlKind?: 'condition' | 'fork' | 'join'; policyKind?:'branch'|'rule'|'action' };
+export type CanvasNode = { key: string; id: string; kind: 'input' | 'output' | 'main' | 'group' | 'rule' | 'control' | 'policy' | 'policy-node'; stage?: 'pre' | 'post'; groupId?: string; index?: number; controlKind?: 'condition' | 'fork' | 'join'; policyKind?:'branch'|'rule'|'switch'|'action' };
 export type CanvasGroupFrame = { key: string; id: string; stage: 'pre' | 'post'; index: number; x: number; y: number; width: number; height: number };
 export type CanvasZoneFrame = CanvasZone & { key: string };
 export const NODE_WIDTH = 144;

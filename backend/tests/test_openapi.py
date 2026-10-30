@@ -17,7 +17,15 @@ def test_openapi_has_unique_actions_valid_model_refs_bodies_and_auth():
                     assert operation['requestBody']['required']
         assert len(ids)==len(set(ids))
         assert 'Workflow' in schema['components']['schemas']
-        assert schema['info']['version']=='3.5.0'
+        assert schema['info']['version']=='3.6.0'
+        switch = schema['components']['schemas']['PolicySwitchNode']
+        assert switch['properties']['kind']['const'] == 'switch'
+        assert {'id', 'name', 'kind', 'path', 'cases'} <= set(switch['required'])
+        assert switch['properties']['cases']['minItems'] == 1
+        assert switch['properties']['cases']['maxItems'] == 12
+        case = schema['components']['schemas']['PolicySwitchCase']
+        assert 'value' in case['required']
+        assert {item['type'] for item in case['properties']['value']['anyOf']} == {'string', 'number', 'boolean', 'null'}
         schemes=schema['components']['securitySchemes']
         assert schemes['ConsoleSession']=={'type':'apiKey','in':'cookie','name':'aegis_session'}
         assert schemes['SessionCSRF']=={'type':'apiKey','in':'header','name':'X-Aegis-CSRF'}

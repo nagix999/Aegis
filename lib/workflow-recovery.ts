@@ -76,13 +76,18 @@ function jsonValue(value: unknown, depth = 0): boolean {
   if (Array.isArray(value)) return value.length <= 1024 && value.every(item=>jsonValue(item,depth+1));
   return object(value) && Object.keys(value).length <= 1024 && Object.values(value).every(item=>jsonValue(item,depth+1));
 }
+function switchValue(value:unknown):boolean {
+  return (value===null||typeof value==='string'||typeof value==='boolean'||typeof value==='number'&&Number.isFinite(value)&&Math.abs(value)<=Number.MAX_SAFE_INTEGER)
+    && new TextEncoder().encode(JSON.stringify(value)).length<=4096;
+}
 function policyGraph(value: unknown): boolean {
   return shape(value,['version','entryNodeId','nodes','edges']) && value.version === 1 && (value.entryNodeId === '' || identifier(value.entryNodeId))
-    && array(value.nodes,24,node => shape(node,['id','name','kind','condition','action','responseText','errorCode','errorMessage']) && identifier(node.id) && string(node.name,100)
+    && array(value.nodes,24,node => shape(node,['id','name','kind','condition','path','cases','action','responseText','errorCode','errorMessage']) && identifier(node.id) && string(node.name,100)
       && (member(node.kind,['branch','rule']) ? shape(node.condition,['mode','predicates']) && member(node.condition.mode,['all','any'])
         && array(node.condition.predicates,12,p=>shape(p,['path','operator','value']) && string(p.path,512) && member(p.operator,['eq','ne','gt','gte','lt','lte','contains','in','exists']) && optional(p.value,jsonValue))
+        : node.kind === 'switch' ? string(node.path,512) && array(node.cases,12,item=>shape(item,['id','value'])&&identifier(item.id)&&Object.prototype.hasOwnProperty.call(item,'value')&&switchValue(item.value))
         : node.kind === 'action' && member(node.action,['main','respond','error']) && optional(node.responseText,v=>string(v,4000)) && optional(node.errorCode,v=>string(v,64)) && optional(node.errorMessage,v=>string(v,500))))
-    && array(value.edges,48,e=>shape(e,['id','from','to','port']) && identifier(e.id) && string(e.from,120) && string(e.to,120) && member(e.port,['true','false']));
+    && array(value.edges,48,e=>shape(e,['id','from','to','port']) && identifier(e.id) && string(e.from,120) && string(e.to,120) && identifier(e.port));
 }
 function policyRouting(value: unknown): boolean {
   if (!shape(value, ['policy', 'routes','graph'])) return false;

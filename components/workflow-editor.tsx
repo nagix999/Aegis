@@ -19,6 +19,7 @@ import { WorkflowGraphSettings } from './workflow-graph-settings';
 import { WorkflowPolicySettings } from './workflow-policy-settings';
 import { PolicyGraphEditor } from './policy-graph-editor';
 import { policyOutputSchema, policyRoutingErrors } from '@/lib/policy-routing';
+import { policyNodePorts } from '@/lib/policy-graph';
 import { addConnectedWorkflowPolicyNode, addWorkflowPolicyGraphNode, bindWorkflowPolicyNode, connectWorkflowPolicyNode, removeWorkflowPolicy, setWorkflowPolicyEntryNode } from '@/lib/workflow-policy-nodes';
 import { addWorkflowControlNode, addWorkflowCheckGroup } from '@/lib/workflow-node-library';
 import { applyConnection, captureInsertTarget, insertCheckOnEdge, previewConnection, type FlowConnectionImpact, type FlowInsertTarget } from '@/lib/workflow-connections';
@@ -143,7 +144,7 @@ function appendGraphGroup(next: Workflow, stage: Stage, groupId: string, afterId
 }
 type IssueTarget = Selection | { kind: 'settings' } | { kind: 'graph'; stage?: Stage };
 type WorkflowIssue = { message: string; target: IssueTarget; label: string; field?: string; predicateIndex?: number };
-type PolicyCreation = {from:string;port:'true'|'false';baseline:string;position?:{x:number;y:number}};
+type PolicyCreation = {from:string;port:string;baseline:string;position?:{x:number;y:number}};
 const policyCreationBaseline=(workflow:Workflow)=>JSON.stringify({policyId:workflow.policyRouting?.policy.id,version:workflow.policyRouting?.policy.version,graph:workflow.policyRouting?.graph});
 function connectionBaseline(workflow: Workflow) { return JSON.stringify({ workflowId: workflow.id, pre: getStageGraph(workflow, 'pre'), post: getStageGraph(workflow, 'post'), groups: [...workflow.pre, ...workflow.post].map(group => ({ id: group.id, name: group.name, required: group.required === true, ruleIds: group.rules.map(rule => rule.id) })) }); }
 
@@ -322,7 +323,7 @@ export function WorkflowEditor({ workflow, connections, dirty, busy, status, ver
   const creationBranch=creationTarget?previewParallelCheckOnEdge(workflow,creationTarget):undefined;
   const visibleTemplates = nodeCatalog.filter(template => (category === 'all' || template.category === category) && `${template.name} ${template.description}`.toLowerCase().includes(libraryQuery.trim().toLowerCase()));
   const branchEligibility = useMemo(()=>({parallel:selectedBranchPreview(workflow,selectedKeys,'parallel'),condition:selectedBranchPreview(workflow,selectedKeys,'condition')}),[workflow,selectedKeys]);
-  const panelTitle = panelMode === 'policy-create' ? '정책 경로에 노드 추가' : panelMode === 'create' ? '노드 추가 방법' : panelMode === 'connection' ? '연결 변경 확인' : panelMode === 'next' ? '다음 노드' : panelMode === 'graph' ? '연결 편집' : panelMode === 'zone' ? '영역 설정' : panelMode === 'workflow' ? '워크플로우 설정' : panelMode === 'library' ? libraryTarget ? '조합에 검사 추가' : '노드 추가' : selection.kind === 'input' ? '입력과 실행' : selection.kind === 'output' ? '출력 결과' : selection.kind === 'group' ? '검사 조합 설정' : selection.kind === 'main' ? '응답 모델 설정' : selection.kind === 'policy' ? '정책 검사 설정' : selection.kind === 'policy-node' ? selectedPolicyNode?.kind === 'action' ? '정책 액션 설정' : '조건 분기 설정' : '검사 설정';
+  const panelTitle = panelMode === 'policy-create' ? '정책 경로에 노드 추가' : panelMode === 'create' ? '노드 추가 방법' : panelMode === 'connection' ? '연결 변경 확인' : panelMode === 'next' ? '다음 노드' : panelMode === 'graph' ? '연결 편집' : panelMode === 'zone' ? '영역 설정' : panelMode === 'workflow' ? '워크플로우 설정' : panelMode === 'library' ? libraryTarget ? '조합에 검사 추가' : '노드 추가' : selection.kind === 'input' ? '입력과 실행' : selection.kind === 'output' ? '출력 결과' : selection.kind === 'group' ? '검사 조합 설정' : selection.kind === 'main' ? '응답 모델 설정' : selection.kind === 'policy' ? '정책 검사 설정' : selection.kind === 'policy-node' ? selectedPolicyNode?.kind === 'action' ? '정책 액션 설정' : selectedPolicyNode?.kind === 'switch' ? 'Switch 분기 설정' : '조건 분기 설정' : '검사 설정';
   const sessionSnapshot = useRef<WorkflowEditorSession | undefined>(undefined);
   sessionSnapshot.current = { workflowId: workflow.id, history: { past: history.past, future: history.future }, selection, inspectorOpen, panelMode: panelMode === 'library' || panelMode === 'next' || panelMode === 'connection' || panelMode === 'create' || panelMode === 'policy-create' ? 'workflow' : panelMode, graphStage, graphControlId, graphEdgeId, view, checksOpen, canvas: canvasViewport.current, inspectorScrollTop: inspectorScroll.current };
   const publishSession = useCallback(() => { if (sessionSnapshot.current) sessionCallback.current?.(sessionSnapshot.current); }, []);
@@ -435,12 +436,12 @@ export function WorkflowEditor({ workflow, connections, dirty, busy, status, ver
       if(target){target.closest('details')?.setAttribute('open','');target.scrollIntoView({block:'nearest'});target.focus({preventScroll:true});}
     }));
   }
-  function openPolicyCreation(source:{from:string;port:'true'|'false';position?:{x:number;y:number}}) {
+  function openPolicyCreation(source:{from:string;port:string;position?:{x:number;y:number}}) {
     if(editingDisabled)return;
-    if(!workflow.policyRouting?.graph?.nodes.some(node=>node.id===source.from&&node.kind!=='action'))return;
+    if(!workflow.policyRouting?.graph?.nodes.some(node=>node.id===source.from&&policyNodePorts(node).some(item=>item.port===source.port)))return;
     setPolicyCreation({...source,baseline:policyCreationBaseline(workflow)});setInsertError('');setPanelMode('policy-create');setLibrary(undefined);setInspectorOpen(true);setView('builder');
   }
-  function createPolicyFromPort(kind:'branch'|'action') {
+  function createPolicyFromPort(kind:'branch'|'switch'|'action') {
     if(editingDisabled||!policyCreation)return;
     if(policyCreation.baseline!==policyCreationBaseline(workflow)){setInsertError('구성 중 정책이나 연결이 바뀌었습니다. 출발 포트를 다시 선택하세요.');return;}
     try{
@@ -1049,7 +1050,7 @@ export function WorkflowEditor({ workflow, connections, dirty, busy, status, ver
     const routing=workflow.policyRouting;
     if(!routing)return <Empty title="정책 검사가 없습니다" description="노드 추가에서 적용할 정책을 선택하세요." />;
     if(selection.kind==='policy-node')return selectedPolicyNode&&routing.graph?<>
-      <div className="we-inspector-node" data-kind="policy-node"><span className="we-node-icon"><GitBranch size={21}/></span><div><strong>{selectedPolicyNode.name}</strong><small>{routing.policy.name} v{routing.policy.version}</small></div></div>
+      <div className="we-inspector-node" data-kind="policy-node"><span className="we-node-icon">{selectedPolicyNode.kind==='switch'?<Split size={21}/>:<GitBranch size={21}/>}</span><div><strong>{selectedPolicyNode.name}</strong><small>{routing.policy.name} v{routing.policy.version}</small></div></div>
       <div className="we-inspector-body"><PolicyGraphEditor nodeActionsRef={nodeActionsRef} graph={routing.graph} schema={policyOutputSchema(routing.policy)} disabled={editingDisabled} nodeOnly onConnect={(from,to,port)=>commit(connectWorkflowPolicyNode(workflow,from,to,port))} onAddFromPort={(from,port)=>openPolicyCreation({from,port})} selectedNodeId={selectedPolicyNode.id} onAddNode={()=>openLibrary('pre')} onSelectNode={nodeId=>nodeId?selectNode({kind:'policy-node',id:nodeId}):selectNode({kind:'policy'})} onChange={graph=>modify(next=>{if(next.policyRouting)next.policyRouting.graph=graph;})}/></div>
     </>:<Empty title="선택한 정책 노드가 없습니다" description="실행 취소로 복원하거나 다른 정책 노드를 선택하세요."/>;
     return <><div className="we-inspector-node" data-kind="policy"><span className="we-node-icon"><BrainCircuit size={21}/></span><div><strong>정책 검사</strong><small>{routing.policy.name} v{routing.policy.version}</small></div></div><div className="we-inspector-body">
@@ -1103,7 +1104,7 @@ export function WorkflowEditor({ workflow, connections, dirty, busy, status, ver
   const renderPolicyCreation=()=>{
     const source=workflow.policyRouting?.graph?.nodes.find(node=>node.id===policyCreation?.from),previous=workflow.policyRouting?.graph?.edges.find(edge=>edge.from===policyCreation?.from&&edge.port===policyCreation?.port),previousNode=workflow.policyRouting?.graph?.nodes.find(node=>node.id===previous?.to);
     const unavailable=editingDisabled||!source||policyCreation?.baseline!==policyCreationBaseline(workflow)||(workflow.policyRouting?.graph?.nodes.length??0)>=24;
-    return <div className="we-inspector-body we-policy-creation"><strong>{source?.name} / {policyCreation?.port==='true'?'참':'거짓'} 경로에 노드 추가</strong><p>선택한 노드 하나를 만들고 이 포트에 연결합니다. 새 노드의 설정과 후속 연결을 완성하세요.</p>{previousNode&&<p className="we-info">현재 {previousNode.name}으로 이어지는 이 포트의 연결을 새 노드로 바꿉니다. 기존 노드는 유지됩니다.</p>}{insertError&&<p className="we-inline-error" role="alert">{insertError}</p>}<button type="button" className="we-creation-choice" disabled={unavailable} onClick={()=>createPolicyFromPort('branch')}><GitBranch size={18}/><span><strong>조건 분기 추가하고 연결</strong><small>출력 필드를 검사하고 참과 거짓으로 나눕니다.</small></span></button><button type="button" className="we-creation-choice" disabled={unavailable} onClick={()=>createPolicyFromPort('action')}><Rocket size={18}/><span><strong>액션 추가하고 연결</strong><small>응답 모델 실행, 등록 안내 응답 또는 지정 오류를 설정합니다.</small></span></button>{(workflow.policyRouting?.graph?.nodes.length??0)>=24&&<p role="status">정책 노드는 최대 24개입니다.</p>}</div>;
+    return <div className="we-inspector-body we-policy-creation"><strong>{source?.name} / {source?policyNodePorts(source).find(item=>item.port===policyCreation?.port)?.label??'선택': '선택'} 경로에 노드 추가</strong><p>선택한 노드 하나를 만들고 이 포트에 연결합니다. 새 노드의 설정과 후속 연결을 완성하세요.</p>{previousNode&&<p className="we-info">현재 {previousNode.name}으로 이어지는 이 포트의 연결을 새 노드로 바꿉니다. 기존 노드는 유지됩니다.</p>}{insertError&&<p className="we-inline-error" role="alert">{insertError}</p>}<button type="button" className="we-creation-choice" disabled={unavailable} onClick={()=>createPolicyFromPort('branch')}><GitBranch size={18}/><span><strong>조건 분기 추가하고 연결</strong><small>출력 필드를 검사하고 참과 거짓으로 나눕니다.</small></span></button><button type="button" className="we-creation-choice" disabled={unavailable} onClick={()=>createPolicyFromPort('switch')}><Split size={18}/><span><strong>Switch 분기 추가하고 연결</strong><small>JSON 필드의 정확한 값 하나에 따라 경로를 선택합니다.</small></span></button><button type="button" className="we-creation-choice" disabled={unavailable} onClick={()=>createPolicyFromPort('action')}><Rocket size={18}/><span><strong>액션 추가하고 연결</strong><small>응답 모델 실행, 등록 안내 응답 또는 지정 오류를 설정합니다.</small></span></button>{(workflow.policyRouting?.graph?.nodes.length??0)>=24&&<p role="status">정책 노드는 최대 24개입니다.</p>}</div>;
   };
   const renderCreationChooser=()=> <div className="we-inspector-body we-creation-chooser"><p>새 검사를 기존 흐름 사이에 넣거나 동시에 실행할 분기로 추가합니다.</p>{creation&&creation.targets.length>1&&<label className="field">추가할 경로<select value={creation.edgeId} disabled={editingDisabled} onChange={event=>setCreation({...creation,edgeId:event.target.value})}>{creation.targets.map(target=><option key={target.edgeId} value={target.edgeId}>{flowLabel(target.stage,target.from)} → {flowLabel(target.stage,target.to)}</option>)}</select></label>}{creationTarget?<><div className="we-creation-context">{flowLabel(creationTarget.stage,creationTarget.from)}<ArrowRight size={13}/>{flowLabel(creationTarget.stage,creationTarget.to)}</div><button className="we-creation-choice" disabled={editingDisabled} onClick={()=>chooseCreation('insert')}><Plus size={19}/><span><strong>사이에 삽입</strong><small>선택한 경로의 앞뒤 연결을 이어 새 검사 하나를 추가합니다.</small></span><ChevronRight size={15}/></button><button className="we-creation-choice" disabled={editingDisabled||!creationBranch?.valid} onClick={()=>chooseCreation('branch')}><Split size={19}/><span><strong>병렬 분기 추가</strong><small>{creationBranch?.valid?creationBranch.minimumNodes===1?'기존 다음 검사와 새 검사를 동시에 실행한 뒤 합류합니다.':'새 검사 2~4개를 동시에 실행한 뒤 기존 흐름으로 합류합니다.':creationBranch?.reason||'이 위치에는 분기를 추가할 수 없습니다.'}</small></span><ChevronRight size={15}/></button></>:<p role="alert">추가할 연결이 없습니다. 연결선에서 다시 선택하세요.</p>}</div>;
   const renderLibrary = () => {
@@ -1120,13 +1121,14 @@ export function WorkflowEditor({ workflow, connections, dirty, busy, status, ver
       if(!policy||policyReason||editingDisabled)return;
       finish(bindWorkflowPolicyNode(workflow,policy,{emptyGraph:true}),{kind:'policy'});setPolicyChooser(false);setDeletePolicyConfirm(false);
     };
-    const addPolicyGraphNode=(kind:'branch'|'action')=>{if(graphReason||editingDisabled)return;try{const added=addWorkflowPolicyGraphNode(workflow,kind);finish(added.workflow,{kind:'policy-node',id:added.nodeId});}catch(error){fail(error);}};
+    const addPolicyGraphNode=(kind:'branch'|'switch'|'action')=>{if(graphReason||editingDisabled)return;try{const added=addWorkflowPolicyGraphNode(workflow,kind);finish(added.workflow,{kind:'policy-node',id:added.nodeId});}catch(error){fail(error);}};
     const addControl=(kind:'condition'|'fork'|'join')=>{if(controlReason||editingDisabled)return;try{const added=addWorkflowControlNode(workflow,library.stage,kind,{target:library.insert?.target});if(library.insert)inheritInsertedZone(added.workflow,library.insert.target,[`control:${added.nodeId}`],library.zoneId);finish(added.workflow,{kind:'control',id:added.nodeId});notify('새 노드의 설정과 연결을 완성한 뒤 저장하세요.');}catch(error){fail(error);}};
     const addGroup=()=>{if(contextReason||editingDisabled)return;try{const added=addWorkflowCheckGroup(workflow,library.stage,{target:library.insert?.target});if(library.insert)inheritInsertedZone(added.workflow,library.insert.target,[`group:${added.groupId}`],library.zoneId);finish(added.workflow,{kind:'group',id:added.groupId});notify('검사 조합에 검사를 추가하고 연결을 완성하세요.');}catch(error){fail(error);}};
     type LibraryCard={key:string;name:string;description:string;category:'llm'|'flow'|'action'|'builtin';Icon:LucideIcon;reason?:string;existing?:boolean;onClick:()=>void};
     const cards:LibraryCard[]=[
       {key:'policy',name:'정책 검사 (구조화 출력)',description:'저장한 정책 버전으로 요청을 분석하고 검증한 JSON 출력을 다음 조건 분기에 전달합니다.',category:'llm',Icon:BrainCircuit,reason:workflow.policyRouting?'':policyReason,existing:Boolean(workflow.policyRouting),onClick:()=>{if(workflow.policyRouting)selectNode({kind:'policy'});else{setPolicyChooser(true);setConditionChooser(false);}}},
       {key:'condition',name:'조건 분기',description:'정책 JSON 출력 또는 요청과 응답 텍스트를 조건으로 검사해 참과 거짓 경로를 선택합니다.',category:'flow',Icon:GitBranch,reason:contextReason,onClick:()=>{setConditionChooser(true);setPolicyChooser(false);}},
+      {key:'switch',name:'Switch 분기',description:'스키마 검증을 통과한 정책 JSON의 필드 값을 정확히 비교해 여러 경로 중 하나를 선택합니다.',category:'flow',Icon:Split,reason:graphReason,onClick:()=>addPolicyGraphNode('switch')},
       {key:'action',name:'정책 액션',description:'조건 분기에서 이어 받아 응답 모델 실행, 등록 안내 응답 또는 지정 오류를 결정합니다.',category:'action',Icon:Rocket,reason:graphReason,onClick:()=>addPolicyGraphNode('action')},
       {key:'fork',name:'병렬 분기',description:'연결한 2~4개 검사 경로를 동시에 실행합니다. 결과 합류 노드로 경로를 이어 주세요.',category:'flow',Icon:Split,reason:controlReason,onClick:()=>addControl('fork')},
       {key:'join',name:'결과 합류',description:'실행 대상 경로가 모두 끝나면 다음 노드로 이어갑니다. 병렬 분기와 연결을 완성하세요.',category:'flow',Icon:GitBranch,reason:controlReason,onClick:()=>addControl('join')},

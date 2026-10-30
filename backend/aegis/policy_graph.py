@@ -163,13 +163,13 @@ def validate_policy_graph(graph: dict, output_schema: dict) -> list[str]:
         return ['정책 노드와 연결선 ID는 중복 없이 영문, 숫자, 밑줄과 하이픈으로 입력하세요.']
     by_id = {node['id']: node for node in nodes}
     entry = graph.get('entryNodeId')
-    if not isinstance(entry, str) or entry not in by_id or by_id[entry].get('kind') not in ('branch', 'rule'):
-        return ['정책 그래프의 시작 노드는 조건 분기여야 합니다.']
+    if not isinstance(entry, str) or entry not in by_id or by_id[entry].get('kind') not in ('branch', 'rule', 'switch'):
+        return ['정책 그래프의 시작 노드는 조건 분기 또는 Switch 분기여야 합니다.']
     outgoing = {identifier: [] for identifier in ids}
     incoming = {identifier: 0 for identifier in ids}
     for edge in edges:
-        if edge.get('from') not in by_id or edge.get('to') not in by_id or edge.get('port') not in ('true', 'false'):
-            return ['정책 연결선의 시작, 도착과 참 또는 거짓 경로를 확인하세요.']
+        if edge.get('from') not in by_id or edge.get('to') not in by_id or not isinstance(edge.get('port'), str) or not SAFE_ID.fullmatch(edge['port']):
+            return ['정책 연결선의 시작, 도착과 출력 경로를 확인하세요.']
         outgoing[edge['from']].append(edge)
         incoming[edge['to']] += 1
     for node in nodes:
@@ -178,6 +178,34 @@ def validate_policy_graph(graph: dict, output_schema: dict) -> list[str]:
         if kind == 'action':
             if links or node.get('action') not in ('main', 'respond', 'error'):
                 return ['정책 동작은 Main, 안내 응답 또는 오류를 선택하며 다음 연결선이 없어야 합니다.']
+            continue
+        if kind == 'switch':
+            try:
+                from .structured_schema import strict_json_equal, validate_json_value
+                selected = schema_at_pointer(output_schema, node.get('path'))
+                validate_json_value(node['path'], max_bytes=4096)
+                cases = node.get('cases')
+                if not isinstance(cases, list) or not 1 <= len(cases) <= 12:
+                    raise ValueError('switch case count')
+                case_ids, case_values = set(), []
+                for case in cases:
+                    if not isinstance(case, dict):
+                        raise ValueError('switch case')
+                    identifier = case.get('id')
+                    if not isinstance(identifier, str) or not SAFE_ID.fullmatch(identifier) or identifier == 'default' or identifier in case_ids:
+                        raise ValueError('switch case id')
+                    value = case.get('value', MISSING)
+                    if value is not None and type(value) not in (str, int, float, bool):
+                        raise ValueError('switch scalar')
+                    validate_json_value(value, max_bytes=4096)
+                    if not _json_type_matches(value, selected, output_schema) or any(strict_json_equal(value, previous) for previous in case_values):
+                        raise ValueError('switch case value')
+                    case_ids.add(identifier)
+                    case_values.append(value)
+                if len(links) != len(cases) + 1 or {edge['port'] for edge in links} != case_ids | {'default'}:
+                    raise ValueError('switch output ports')
+            except (ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
+                return ['Switch 분기는 스키마에 맞는 필드 경로와 중복 없는 비교값 1~12개를 지정하고 각 값과 기본 경로를 하나씩 연결하세요.']
             continue
         if kind not in ('branch', 'rule') or len(links) != 2 or {edge['port'] for edge in links} != {'true', 'false'}:
             return ['조건 분기에는 참과 거짓 연결선이 각각 하나씩 필요합니다.']
@@ -220,10 +248,10 @@ def validate_policy_graph(graph: dict, output_schema: dict) -> list[str]:
                     raise ValueError('comparison value type')
             except (ValueError, TypeError, KeyError, AttributeError, OverflowError, RecursionError):
                 return ['정책 조건의 필드 경로, 비교 연산과 값의 형식을 출력 스키마에 맞게 지정하세요.']
-    # One traversal checks both cycles and unreachable fragments. Every condition
-    # has two edges and every terminal is an action, so every path must finish.
+    # One traversal checks both cycles and unreachable fragments. Every branch
+    # has all required output edges and every terminal is an action.
     if incoming[entry] != 0:
-        return ['정책 시작 조건으로 들어오는 연결선은 사용할 수 없습니다.']
+        return ['정책 시작 노드로 들어오는 연결선은 사용할 수 없습니다.']
     pending = deque(identifier for identifier in ids if incoming[identifier] == 0)
     remaining = dict(incoming)
     ordered = []
@@ -243,7 +271,7 @@ def validate_policy_graph(graph: dict, output_schema: dict) -> list[str]:
             reachable.add(current)
             pending.extend(edge['to'] for edge in outgoing[current])
     if reachable != set(ids):
-        return ['정책 그래프의 모든 노드는 시작 조건에서 이어져야 합니다.']
+        return ['정책 그래프의 모든 노드는 시작 노드에서 이어져야 합니다.']
     return []
 
 
@@ -282,10 +310,26 @@ def execute_policy_graph(graph: dict, output: Any) -> dict:
         path.append(selected)
         if node['kind'] == 'action':
             return {'route': node, 'path': path}
-        condition = node['condition']
-        matches = [predicate_matches(predicate, output) for predicate in condition['predicates']]
-        matched = all(matches) if condition['mode'] == 'all' else any(matches)
-        links = [edge for edge in graph['edges'] if edge['from'] == selected and edge['port'] == ('true' if matched else 'false')]
+        if node['kind'] == 'switch':
+            from .structured_schema import strict_json_equal
+            value = value_at_pointer(output, node['path'])
+            port = 'default'
+            # Missing fields and composite JSON values use the default output.
+            # Missing must remain distinct from a present, explicit null.
+            if value is None or type(value) in (str, int, float, bool):
+                matching = [case['id'] for case in node['cases'] if strict_json_equal(value, case['value'])]
+                if len(matching) > 1:
+                    break
+                if matching:
+                    port = matching[0]
+        elif node['kind'] in ('branch', 'rule'):
+            condition = node['condition']
+            matches = [predicate_matches(predicate, output) for predicate in condition['predicates']]
+            matched = all(matches) if condition['mode'] == 'all' else any(matches)
+            port = 'true' if matched else 'false'
+        else:
+            break
+        links = [edge for edge in graph['edges'] if edge['from'] == selected and edge['port'] == port]
         if len(links) != 1:
             break
         selected = links[0]['to']
